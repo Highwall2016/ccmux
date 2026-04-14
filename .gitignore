@@ -1,0 +1,64 @@
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.sum
+/vendor/
+
+# Go workspace
+go.work.sum
+
+# Build output
+/backend/server
+/agent/ccmux
+/agent/ccmux-agent
+dist/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.p8
+*.pem
+*.key
+*.json.secret
+apns*.p8
+fcm*.json
+secrets/
+
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/build/
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/google-services.json
+mobile/ios/GoogleService-Info.plist
+*.iml
+*.g.dart
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Docker
+*.tar
+
+# Logs
+*.log
