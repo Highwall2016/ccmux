@@ -5,26 +5,39 @@ services:
       POSTGRES_DB: ccmux
       POSTGRES_USER: ccmux
       POSTGRES_PASSWORD: devpassword
-    ports: ["5432:5432"]
-    volumes: [postgres_data:/var/lib/postgresql/data]
+    ports: [ "5432:5432" ]
+    volumes: [ postgres_data:/var/lib/postgresql/data ]
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ccmux -d ccmux" ]
+      interval: 2s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes
-    ports: ["6379:6379"]
-    volumes: [redis_data:/data]
+    ports: [ "6379:6379" ]
+    volumes: [ redis_data:/data ]
 
   backend:
     build: ./backend
-    depends_on: [postgres, redis]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     environment:
-      DATABASE_URL: postgres://ccmux:devpassword@postgres:5432/ccmux
+      DATABASE_URL: postgres://ccmux:devpassword@postgres:5432/ccmux?sslmode=disable
       REDIS_URL: redis://redis:6379
       JWT_SECRET: dev_secret_change_in_prod
       HMAC_SECRET: dev_hmac_secret_change_in_prod
       MULTI_INSTANCE_MODE: "false"
       SERVER_ADDR: :8080
-    ports: ["8080:8080"]
+      FCM_PROJECT_ID: "ccmux-3002e"
+      FCM_SERVICE_ACCOUNT_PATH: "/etc/firebase-key.json"
+    ports: [ "8080:8080" ]
+    volumes:
+      - ./firebase-key.json:/etc/firebase-key.json:ro
 
 volumes:
   postgres_data:
