@@ -1,0 +1,54 @@
+name: ccmux
+description: Control terminal sessions on your desktop from your phone.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Terminal emulation
+  xterm: ^3.7.0
+
+  # WebSocket
+  web_socket_channel: ^3.0.1
+
+  # MessagePack protocol encoding
+  messagepack: ^0.2.1
+
+  # State management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Navigation
+  go_router: ^14.2.7
+
+  # HTTP client with interceptors for JWT refresh
+  dio: ^5.6.0
+
+  # Secure token storage
+  flutter_secure_storage: ^9.2.2
+
+  # Push notifications (covers both iOS/APNs and Android/FCM via Firebase)
+  firebase_core: ^3.4.0
+  firebase_messaging: ^15.1.3
+  flutter_local_notifications: ^17.2.2
+
+  # Network connectivity for WS reconnect
+  connectivity_plus: ^6.0.5
+
+  # Device info for push token registration
+  device_info_plus: ^10.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  riverpod_generator: ^2.4.0
+  build_runner: ^2.4.11
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

@@ -21,6 +21,7 @@ services:
       DATABASE_URL: postgres://ccmux:devpassword@postgres:5432/ccmux
       REDIS_URL: redis://redis:6379
       JWT_SECRET: dev_secret_change_in_prod
+      HMAC_SECRET: dev_hmac_secret_change_in_prod
       MULTI_INSTANCE_MODE: "false"
       SERVER_ADDR: :8080
     ports: ["8080:8080"]

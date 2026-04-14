@@ -27,6 +27,12 @@ func HashDeviceToken(raw, secret string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// HashRefreshToken returns the SHA-256 hash of a raw refresh token as a hex string.
+func HashRefreshToken(raw string) string {
+	h := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(h[:])
+}
+
 // GenerateRefreshToken returns a random 32-byte token and its SHA-256 hash.
 func GenerateRefreshToken() (raw, hashed string, err error) {
 	b := make([]byte, 32)

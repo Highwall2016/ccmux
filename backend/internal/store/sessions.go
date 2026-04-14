@@ -22,7 +22,7 @@ type TerminalSession struct {
 	LastActivity time.Time
 }
 
-// CreateSession inserts a new terminal session.
+// CreateSession inserts a new terminal session and returns its generated UUID.
 func (db *DB) CreateSession(deviceID, command, name string, cols, rows int) (string, error) {
 	var id string
 	err := db.QueryRow(
@@ -34,6 +34,25 @@ func (db *DB) CreateSession(deviceID, command, name string, cols, rows int) (str
 		return "", fmt.Errorf("create session: %w", err)
 	}
 	return id, nil
+}
+
+// UpsertSession inserts a session with a caller-supplied UUID (used by the desktop
+// agent, which generates the ID before the session is known to the backend).
+// If the session already exists the operation is a no-op.
+func (db *DB) UpsertSession(id, deviceID, command, name string, cols, rows int) error {
+	if cols == 0 {
+		cols = 80
+	}
+	if rows == 0 {
+		rows = 24
+	}
+	_, err := db.Exec(
+		`INSERT INTO terminal_sessions (id, device_id, command, name, cols, rows)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 ON CONFLICT (id) DO NOTHING`,
+		id, deviceID, command, name, cols, rows,
+	)
+	return err
 }
 
 // GetSessionByID retrieves a session.
@@ -100,5 +119,11 @@ func (db *DB) UpdateStatus(id, status string, exitCode *int) error {
 // TouchSession updates last_activity.
 func (db *DB) TouchSession(id string) error {
 	_, err := db.Exec(`UPDATE terminal_sessions SET last_activity=NOW() WHERE id=$1`, id)
+	return err
+}
+
+// ResizeSession updates the terminal dimensions for a session.
+func (db *DB) ResizeSession(id string, cols, rows int) error {
+	_, err := db.Exec(`UPDATE terminal_sessions SET cols=$1, rows=$2 WHERE id=$3`, cols, rows, id)
 	return err
 }

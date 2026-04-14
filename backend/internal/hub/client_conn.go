@@ -37,6 +37,9 @@ func NewClientConn(userID string, conn *websocket.Conn, hub *Hub) *ClientConn {
 	return c
 }
 
+// Send is the exported, non-blocking enqueue (same semantics as send).
+func (c *ClientConn) Send(data []byte) { c.send(data) }
+
 // send is the non-blocking enqueue for the hot path.
 // Frames are dropped when the buffer is full (slow consumer / mobile throttle).
 func (c *ClientConn) send(data []byte) {
