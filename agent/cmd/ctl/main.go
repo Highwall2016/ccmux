@@ -120,7 +120,7 @@ func runSpawn(socketPath string, args []string) {
 
 func runKill(socketPath string, args []string) {
 	if len(args) == 0 {
-		fatalf("usage: ccmux-ctl kill SESSION_ID")
+		fatalf("usage: ccmux kill NAME|UUID")
 	}
 	req := ipc.KillRequest{Cmd: "kill", SessionID: args[0]}
 	var resp ipc.Response
@@ -147,7 +147,7 @@ func runList(socketPath string) {
 		return
 	}
 	for _, s := range resp.Sessions {
-		fmt.Println(s)
+		fmt.Printf("%s (%s)\n", s.Name, s.ID)
 	}
 }
 
@@ -305,13 +305,14 @@ func usage() {
 
 Usage:
   ccmux new [--name NAME] [--cols N] [--rows N] [--patterns P1,P2] [COMMAND...]
-  ccmux kill SESSION_ID
+  ccmux kill NAME|UUID
   ccmux list
   ccmux attach SESSION_ID
   ccmux rename SESSION_ID NAME
 
 Flags (new):
-  --name     human-readable display name shown in the mobile app
+  --name     display name shown in the mobile app and used with kill/attach
+             (auto-assigned as 0, 1, 2, … when omitted)
   --cols     terminal width  (auto-detected from current terminal)
   --rows     terminal height (auto-detected from current terminal)
   --patterns comma-separated extra alert patterns; defaults already include
@@ -319,7 +320,6 @@ Flags (new):
              "do you want", "would you like", "are you sure"
 
   COMMAND defaults to bash when omitted.
-  SESSION_ID is always auto-generated as a UUID.
 
 Environment:
   CCMUX_IPC_SOCKET  Unix socket path (default: /tmp/ccmux.sock)`)

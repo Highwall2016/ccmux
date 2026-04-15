@@ -50,9 +50,9 @@ class WorkspaceDrawer extends ConsumerWidget {
                         return DeviceSection(
                           device: device,
                           sessions: sessions,
-                          onSessionTap: (sessionId) {
+                          onSessionTap: (sessionId, sessionName) {
                             ref.read(terminalProvider.notifier)
-                                .openSession(sessionId);
+                                .openSession(sessionId, name: sessionName);
                             Navigator.of(context).pop(); // close drawer
                           },
                           onRenameSession: (sessionId, currentName) =>

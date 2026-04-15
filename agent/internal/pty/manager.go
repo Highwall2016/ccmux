@@ -6,10 +6,17 @@ import (
 	"io"
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+// SessionInfo pairs a session ID with its display name.
+type SessionInfo struct {
+	ID   string
+	Name string
+}
 
 const readBufSize = 32 * 1024 // 32 KB read buffer per session
 
@@ -59,6 +66,10 @@ type Manager struct {
 	onAlert      AlertFunc // may be nil
 	defaultShell string
 
+	// names maps session ID → display name.
+	names   map[string]string
+	namesMu sync.RWMutex
+
 	// alertAt tracks the last alert time per session to enforce cooldown.
 	alertAt   map[string]time.Time
 	alertAtMu sync.Mutex
@@ -77,6 +88,7 @@ type Manager struct {
 func NewManager(shell string, onOutput OutputFunc, onExit StatusFunc, onAlert AlertFunc) *Manager {
 	return &Manager{
 		sessions:      make(map[string]*Session),
+		names:         make(map[string]string),
 		onOutput:      onOutput,
 		onExit:        onExit,
 		onAlert:       onAlert,
@@ -85,6 +97,42 @@ func NewManager(shell string, onOutput OutputFunc, onExit StatusFunc, onAlert Al
 		consumers:     make(map[string][]*localConsumer),
 		extraPatterns: make(map[string][][]byte),
 	}
+}
+
+// nextName returns the lowest non-negative integer (as a string) that is not
+// already used as a session name.
+func (m *Manager) nextName() string {
+	m.namesMu.RLock()
+	inUse := make(map[string]bool, len(m.names))
+	for _, n := range m.names {
+		inUse[n] = true
+	}
+	m.namesMu.RUnlock()
+	for i := 0; ; i++ {
+		if !inUse[strconv.Itoa(i)] {
+			return strconv.Itoa(i)
+		}
+	}
+}
+
+// resolveID returns the session ID for nameOrID.
+// It first checks if nameOrID is a live session ID, then searches by name.
+// Returns ("", false) when not found.
+func (m *Manager) resolveID(nameOrID string) (string, bool) {
+	m.mu.RLock()
+	_, byID := m.sessions[nameOrID]
+	m.mu.RUnlock()
+	if byID {
+		return nameOrID, true
+	}
+	m.namesMu.RLock()
+	defer m.namesMu.RUnlock()
+	for id, name := range m.names {
+		if name == nameOrID {
+			return id, true
+		}
+	}
+	return "", false
 }
 
 // SetExtraAlertPatterns registers additional (case-insensitive) alert patterns
@@ -103,9 +151,13 @@ func (m *Manager) SetExtraAlertPatterns(sessionID string, patterns []string) {
 }
 
 // Spawn starts a new PTY session. command may be empty (uses default shell).
+// If name is empty a numeric name is auto-assigned (0, 1, 2, …).
 // If command contains shell metacharacters or multiple words with arguments,
 // it is executed via the default shell so that quoting works correctly.
-func (m *Manager) Spawn(id, command string, cols, rows uint16) error {
+func (m *Manager) Spawn(id, name, command string, cols, rows uint16) error {
+	if name == "" {
+		name = m.nextName()
+	}
 	if command == "" {
 		command = m.defaultShell
 	}
@@ -131,6 +183,9 @@ func (m *Manager) Spawn(id, command string, cols, rows uint16) error {
 	m.mu.Lock()
 	m.sessions[id] = sess
 	m.mu.Unlock()
+	m.namesMu.Lock()
+	m.names[id] = name
+	m.namesMu.Unlock()
 
 	// Read loop: runs until the PTY is closed.
 	go func() {
@@ -173,6 +228,9 @@ func (m *Manager) Spawn(id, command string, cols, rows uint16) error {
 		m.extraPatternsMu.Lock()
 		delete(m.extraPatterns, id)
 		m.extraPatternsMu.Unlock()
+		m.namesMu.Lock()
+		delete(m.names, id)
+		m.namesMu.Unlock()
 		sess.Close()
 		// Only fire onExit for natural exits.  When Kill() removed the session
 		// first, the backend was already notified "killed" by the REST handler.
@@ -206,11 +264,14 @@ func (m *Manager) Resize(id string, cols, rows uint16) error {
 	return sess.Resize(cols, rows)
 }
 
-// Kill terminates a session by closing its PTY and killing the process.
-// The session is removed from the map immediately under the write lock so
-// that `list` and `attach` stop seeing it right away, without waiting for
-// the Wait goroutine (which may block on cmd.Wait with a PTY on macOS).
-func (m *Manager) Kill(id string) error {
+// Kill terminates a session. nameOrID may be the session's display name or its
+// UUID. The session is removed from the map immediately under the write lock so
+// that `list` and `attach` stop seeing it right away.
+func (m *Manager) Kill(nameOrID string) error {
+	id, ok := m.resolveID(nameOrID)
+	if !ok {
+		return fmt.Errorf("session %q not found", nameOrID)
+	}
 	m.mu.Lock()
 	sess, ok := m.sessions[id]
 	if ok {
@@ -218,26 +279,35 @@ func (m *Manager) Kill(id string) error {
 	}
 	m.mu.Unlock()
 	if !ok {
-		return fmt.Errorf("session %s not found", id)
+		return fmt.Errorf("session %q not found", nameOrID)
 	}
 	m.extraPatternsMu.Lock()
 	delete(m.extraPatterns, id)
 	m.extraPatternsMu.Unlock()
-	// Kill the process first (SIGKILL) then close the PTY master.
+	m.namesMu.Lock()
+	delete(m.names, id)
+	m.namesMu.Unlock()
 	sess.Kill()
 	sess.Close()
 	return nil
 }
 
-// List returns the IDs of all active sessions.
-func (m *Manager) List() []string {
+// List returns info for all active sessions.
+func (m *Manager) List() []SessionInfo {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
 	ids := make([]string, 0, len(m.sessions))
 	for id := range m.sessions {
 		ids = append(ids, id)
 	}
-	return ids
+	m.mu.RUnlock()
+
+	m.namesMu.RLock()
+	infos := make([]SessionInfo, 0, len(ids))
+	for _, id := range ids {
+		infos = append(infos, SessionInfo{ID: id, Name: m.names[id]})
+	}
+	m.namesMu.RUnlock()
+	return infos
 }
 
 // AddOutputConsumer registers fn to receive PTY output for sessionID.

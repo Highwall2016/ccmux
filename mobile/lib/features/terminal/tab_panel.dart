@@ -22,7 +22,7 @@ class TabPanel extends ConsumerWidget {
         itemBuilder: (context, i) {
           final sess = sessions[i];
           final isActive = sess.id == state.activeSessionId;
-          final label = sess.id.substring(0, 8);
+          final label = sess.name;
 
           return Padding(
             padding: const EdgeInsets.only(right: 4),

@@ -4,7 +4,7 @@ import '../../core/api/api_models.dart';
 class DeviceSection extends StatelessWidget {
   final DeviceModel device;
   final List<SessionModel> sessions;
-  final void Function(String sessionId) onSessionTap;
+  final void Function(String sessionId, String sessionName) onSessionTap;
   final void Function(String sessionId, String currentName) onRenameSession;
   final void Function(String sessionId) onKillSession;
 
@@ -49,7 +49,7 @@ class DeviceSection extends StatelessWidget {
                   style: const TextStyle(fontFamily: 'monospace'),
                   overflow: TextOverflow.ellipsis,
                 ),
-                onTap: () => onSessionTap(s.id),
+                onTap: () => onSessionTap(s.id, s.name.isNotEmpty ? s.name : s.command),
                 onLongPress: () => _showSessionMenu(context, s),
                 trailing: IconButton(
                   icon: const Icon(Icons.more_vert, size: 18),

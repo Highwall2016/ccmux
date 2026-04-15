@@ -58,18 +58,24 @@ type ResizeRequest struct {
 	Rows      uint16 `json:"rows"`
 }
 
+// SessionInfo pairs a session ID with its display name.
+type SessionInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 // Response is returned for every command.
 type Response struct {
-	OK       bool     `json:"ok"`
-	Error    string   `json:"error,omitempty"`
-	Sessions []string `json:"sessions,omitempty"` // set for "list"
+	OK       bool          `json:"ok"`
+	Error    string        `json:"error,omitempty"`
+	Sessions []SessionInfo `json:"sessions,omitempty"` // set for "list"
 }
 
 // Handler dispatches incoming IPC commands.
 type Handler struct {
 	OnSpawn  func(sessionID, name, command string, cols, rows uint16, alertPatterns []string) error
-	OnKill   func(sessionID string) error
-	OnList   func() []string
+	OnKill   func(nameOrID string) error
+	OnList   func() []SessionInfo
 	OnResize func(sessionID string, cols, rows uint16) error
 	OnRename func(sessionID, name string) error
 	// OnAttach streams raw PTY I/O over conn after sending the OK response.
@@ -162,7 +168,11 @@ func (h *Handler) handle(conn net.Conn) {
 
 	case "list":
 		resp.OK = true
-		resp.Sessions = h.OnList()
+		infos := h.OnList()
+		if infos == nil {
+			infos = []SessionInfo{}
+		}
+		resp.Sessions = infos
 
 	case "resize":
 		var req ResizeRequest

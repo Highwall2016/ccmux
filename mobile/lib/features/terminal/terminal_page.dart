@@ -26,7 +26,7 @@ class TerminalPage extends ConsumerWidget {
           color: Colors.white70,
         ),
         title: Text(activeId != null
-            ? 'session: ${activeId.substring(0, 8)}'
+            ? 'session: ${termState!.sessions[activeId]?.name ?? activeId.substring(0, 8)}'
             : 'ccmux'),
         actions: [
           if (termState != null && termState.sessions.isEmpty)

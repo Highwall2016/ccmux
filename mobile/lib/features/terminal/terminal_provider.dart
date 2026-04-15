@@ -13,6 +13,7 @@ import '../../core/websocket/ws_reconnect.dart';
 /// Per-session state.
 class TerminalSessionState {
   final String id;
+  final String name;
   final Terminal terminal;
   final String status; // active | exited | killed
   final int? exitCode;
@@ -20,6 +21,7 @@ class TerminalSessionState {
 
   const TerminalSessionState({
     required this.id,
+    required this.name,
     required this.terminal,
     this.status = 'active',
     this.exitCode,
@@ -27,12 +29,14 @@ class TerminalSessionState {
   });
 
   TerminalSessionState copyWith({
+    String? name,
     String? status,
     int? exitCode,
     bool? hasNewOutput,
   }) =>
       TerminalSessionState(
         id:           id,
+        name:         name         ?? this.name,
         terminal:     terminal,
         status:       status       ?? this.status,
         exitCode:     exitCode     ?? this.exitCode,
@@ -81,7 +85,7 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
   }
 
   /// Subscribe to a session and create a [Terminal] for it.
-  void openSession(String sessionId) {
+  void openSession(String sessionId, {String name = ''}) {
     final current = state.valueOrNull ?? const TerminalState();
     if (current.sessions.containsKey(sessionId)) {
       state = AsyncValue.data(current.copyWith(activeSessionId: sessionId));
@@ -98,7 +102,11 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
       },
     );
     final sessions = Map<String, TerminalSessionState>.from(current.sessions);
-    sessions[sessionId] = TerminalSessionState(id: sessionId, terminal: terminal);
+    sessions[sessionId] = TerminalSessionState(
+      id: sessionId,
+      name: name.isNotEmpty ? name : sessionId.substring(0, 8),
+      terminal: terminal,
+    );
 
     state = AsyncValue.data(TerminalState(
       sessions:        sessions,
@@ -183,7 +191,7 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
 
   void _updateSessionStatus(Uint8List? payload) {
     if (payload == null) return;
-    String? id, status;
+    String? id, status, name;
     int? exitCode;
     try {
       final u = Unpacker.fromList(payload);
@@ -193,8 +201,9 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
         switch (k) {
           case 'id':        id       = u.unpackString();
           case 'status':    status   = u.unpackString();
+          case 'name':      name     = u.unpackString();
           case 'exit_code': exitCode = u.unpackInt();
-          default:          u.unpackString(); // name, cmd are strings
+          default:          u.unpackString(); // cmd is a string
         }
       }
     } catch (_) {
@@ -206,7 +215,11 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
     final sess = current.sessions[id];
     if (sess == null) return;
     final sessions = Map<String, TerminalSessionState>.from(current.sessions);
-    sessions[id] = sess.copyWith(status: status, exitCode: exitCode);
+    sessions[id] = sess.copyWith(
+      status: status,
+      exitCode: exitCode,
+      name: (name != null && name.isNotEmpty) ? name : null,
+    );
     state = AsyncValue.data(current.copyWith(sessions: sessions));
   }
 }

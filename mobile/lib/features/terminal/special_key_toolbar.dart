@@ -18,12 +18,13 @@ class SpecialKeyToolbar extends ConsumerWidget {
     }
 
     final keys = [
-      _Key('Tab',   () => send([0x09])),
-      _Key('Esc',   () => send([0x1B])),
-      _Key('Ctrl+C',() => send([0x03])),
-      _Key('Ctrl+D',() => send([0x04])),
-      _Key('Ctrl+Z',() => send([0x1A])),
-      _Key('Ctrl+L',() => send([0x0C])),
+      _Key('Tab',     () => send([0x09])),
+      _Key('Esc',     () => send([0x1B])),
+      _Key('Ctrl+C',  () => send([0x03])),
+      _Key('Ctrl+D',  () => send([0x04])),
+      _Key('Ctrl+Z',  () => send([0x1A])),
+      _Key('Ctrl+L',  () => send([0x0C])),
+      _Key('Ctrl+\\', () => send([0x1C])),
       _Key('↑',     () => send([0x1B, 0x5B, 0x41])),
       _Key('↓',     () => send([0x1B, 0x5B, 0x42])),
       _Key('←',     () => send([0x1B, 0x5B, 0x44])),

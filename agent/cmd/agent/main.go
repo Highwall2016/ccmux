@@ -127,16 +127,16 @@ func main() {
 	// device as exited.  Re-announce every session the PTY manager is still
 	// running so the backend and mobile see the correct live state.
 	wsConn.SetConnectHandler(func() {
-		for _, id := range ptyMgr.List() {
-			announceSession(wsConn, id, "", "")
-			log.Printf("[agent] re-announced live session %s", id)
+		for _, si := range ptyMgr.List() {
+			announceSession(wsConn, si.ID, si.Name, "")
+			log.Printf("[agent] re-announced live session %s (%s)", si.ID, si.Name)
 		}
 	})
 
 	// IPC server: Unix socket for local session management.
 	ipcHandler := ipc.Handler{
 		OnSpawn: func(sessionID, name, command string, cols, rows uint16, alertPatterns []string) error {
-			if err := ptyMgr.Spawn(sessionID, command, cols, rows); err != nil {
+			if err := ptyMgr.Spawn(sessionID, name, command, cols, rows); err != nil {
 				return err
 			}
 			// Register any extra alert patterns requested by the caller.
@@ -147,8 +147,15 @@ func main() {
 			announceSession(wsConn, sessionID, name, command)
 			return nil
 		},
-		OnKill:   ptyMgr.Kill,
-		OnList:   ptyMgr.List,
+		OnKill: ptyMgr.Kill,
+		OnList: func() []ipc.SessionInfo {
+			infos := ptyMgr.List()
+			out := make([]ipc.SessionInfo, len(infos))
+			for i, si := range infos {
+				out[i] = ipc.SessionInfo{ID: si.ID, Name: si.Name}
+			}
+			return out
+		},
 		OnResize: ptyMgr.Resize,
 		OnRename: func(sessionID, name string) error {
 			// Notify the backend via a TypeRenameSession packet so it updates the
