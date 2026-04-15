@@ -2,148 +2,35 @@
 # setup-local.sh — bootstrap the full ccmux stack for local development.
 #
 # What it does:
-#   1. Builds the ccmux-agent and ccmux binaries.
-#   2. Starts Postgres + Redis via docker-compose (if not already running).
-#   3. Starts the backend in the background (auto-migrates on first run).
-#   4. Registers a test user + device via the HTTP API.
-#   5. Writes .env.agent with CCMUX_* credentials for the agent.
+#   1. Starts the full stack (Postgres + Redis + backend) via docker compose.
+#   2. Registers a dev user + device via regist-user-device.sh.
+#   3. Builds and starts the local agent via run-agent.sh.
 #
 # Usage:
 #   cd /path/to/ccmux
 #   ./scripts/setup-local.sh
 #
-# After the script finishes, run the agent with:
+# To register against a remote backend instead:
+#   CCMUX_API_URL=http://100.116.137.95:8080 ./scripts/regist-user-device.sh
 #   ./scripts/run-agent.sh
-#
-# Validate all ctl operations with:
-#   ./scripts/validate.sh
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-API_URL="${CCMUX_API_URL:-http://localhost:8080}"
-JWT_SECRET="${JWT_SECRET:-dev_secret_change_in_prod}"
-HMAC_SECRET="${HMAC_SECRET:-dev_hmac_secret_change_in_prod}"
-DATABASE_URL="${DATABASE_URL:-postgres://ccmux:devpassword@localhost:5432/ccmux?sslmode=disable}"
-REDIS_URL="${REDIS_URL:-redis://localhost:6379}"
+log() { echo "[setup] $*"; }
 
-TEST_EMAIL="${TEST_EMAIL:-dev@ccmux.local}"
-TEST_PASSWORD="${TEST_PASSWORD:-devpassword123}"
-DEVICE_NAME="${DEVICE_NAME:-$(hostname)-dev}"
+# ─── step 1: start docker compose ─────────────────────────────────────────────
 
-AGENT_BIN="$REPO_ROOT/bin/ccmux-agent"
-CTL_BIN="$REPO_ROOT/bin/ccmux"
-ENV_FILE="$REPO_ROOT/.env.agent"
-BACKEND_LOG="$REPO_ROOT/.backend.log"
+log "starting stack (docker compose up -d) …"
+docker compose up -d
+log "stack is up"
 
-# ─── helpers ───────────────────────────────────────────────────────────────────
+# ─── step 2: register user + device ───────────────────────────────────────────
 
-log()  { echo "[setup] $*"; }
-die()  { echo "[setup] ERROR: $*" >&2; exit 1; }
+"$REPO_ROOT/scripts/regist-user-device.sh"
 
-wait_for_http() {
-  local url="$1" tries=30
-  log "waiting for $url …"
-  for i in $(seq 1 $tries); do
-    if curl -sf "$url/api/auth/login" -d '{}' -H 'Content-Type: application/json' \
-         -o /dev/null 2>/dev/null; then
-      log "backend is up"
-      return 0
-    fi
-    sleep 1
-  done
-  die "backend did not start after $tries seconds — check $BACKEND_LOG"
-}
+# ─── step 3: build and run agent ──────────────────────────────────────────────
 
-# ─── step 1: build binaries ────────────────────────────────────────────────────
-
-log "building agent and ctl …"
-mkdir -p "$REPO_ROOT/bin"
-go build -o "$AGENT_BIN" ./agent/cmd/agent
-go build -o "$CTL_BIN"   ./agent/cmd/ctl
-log "built: $AGENT_BIN  $CTL_BIN"
-
-# ─── step 2: start docker-compose (postgres + redis only) ──────────────────────
-
-log "starting postgres + redis …"
-docker compose up -d postgres redis
-# Give postgres a moment even after healthcheck
-sleep 3
-
-# ─── step 3: start backend ─────────────────────────────────────────────────────
-
-# Kill any existing backend process.
-if pgrep -f "ccmux.*server" >/dev/null 2>&1; then
-  log "stopping existing backend …"
-  pkill -f "ccmux.*server" || true
-  sleep 1
-fi
-
-log "starting backend (log → $BACKEND_LOG) …"
-env DATABASE_URL="$DATABASE_URL" \
-    REDIS_URL="$REDIS_URL" \
-    JWT_SECRET="$JWT_SECRET" \
-    HMAC_SECRET="$HMAC_SECRET" \
-    SERVER_ADDR=":8080" \
-    FCM_PROJECT_ID="${FCM_PROJECT_ID:-}" \
-    FCM_SERVICE_ACCOUNT_PATH="${FCM_SERVICE_ACCOUNT_PATH:-}" \
-  go run ./backend/cmd/server >"$BACKEND_LOG" 2>&1 &
-BACKEND_PID=$!
-echo "$BACKEND_PID" > "$REPO_ROOT/.backend.pid"
-log "backend PID: $BACKEND_PID"
-
-wait_for_http "$API_URL"
-
-# ─── step 4: register user + device ────────────────────────────────────────────
-
-log "registering user: $TEST_EMAIL"
-REGISTER_RESP=$(curl -sf -X POST "$API_URL/api/auth/register" \
-  -H 'Content-Type: application/json' \
-  -d "{\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASSWORD\"}" 2>&1) || {
-    # If registration fails because the user exists, try login instead.
-    log "register failed (user may already exist) — trying login …"
-    REGISTER_RESP=$(curl -sf -X POST "$API_URL/api/auth/login" \
-      -H 'Content-Type: application/json' \
-      -d "{\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASSWORD\"}")
-  }
-
-ACCESS_TOKEN=$(echo "$REGISTER_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-[ -z "$ACCESS_TOKEN" ] && die "could not obtain access token"
-log "access token acquired"
-
-log "registering device: $DEVICE_NAME"
-DEVICE_RESP=$(curl -sf -X POST "$API_URL/api/devices" \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d "{\"name\":\"$DEVICE_NAME\",\"platform\":\"macos\"}")
-
-DEVICE_ID=$(echo "$DEVICE_RESP"    | python3 -c "import sys,json; print(json.load(sys.stdin)['device_id'])")
-DEVICE_TOKEN=$(echo "$DEVICE_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['device_token'])")
-[ -z "$DEVICE_ID" ]    && die "could not obtain device_id"
-[ -z "$DEVICE_TOKEN" ] && die "could not obtain device_token"
-log "device registered: $DEVICE_ID"
-
-# ─── step 5: write .env.agent ──────────────────────────────────────────────────
-
-cat > "$ENV_FILE" <<EOF
-# Generated by scripts/setup-local.sh — do NOT commit
-export CCMUX_SERVER_URL="ws://localhost:8080"
-export CCMUX_DEVICE_ID="$DEVICE_ID"
-export CCMUX_DEVICE_TOKEN="$DEVICE_TOKEN"
-export CCMUX_IPC_SOCKET="/tmp/ccmux.sock"
-EOF
-
-log "credentials written to $ENV_FILE"
-echo ""
-echo "────────────────────────────────────────────────────────────"
-echo "  Setup complete!"
-echo ""
-echo "  Backend:  running (PID $BACKEND_PID, log: .backend.log)"
-echo "  Device:   $DEVICE_ID"
-echo ""
-echo "  Next steps:"
-echo "    ./scripts/run-agent.sh          # start the desktop agent"
-echo "    ./scripts/validate.sh           # run CTL validation"
-echo "────────────────────────────────────────────────────────────"
+"$REPO_ROOT/scripts/run-agent.sh"
