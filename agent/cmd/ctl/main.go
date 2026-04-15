@@ -61,6 +61,7 @@ func runSpawn(socketPath string, args []string) {
 	id := fs.String("id", "", "session UUID (generated if empty)")
 	cols := fs.Uint("cols", 0, "terminal width (auto-detected if 0)")
 	rows := fs.Uint("rows", 0, "terminal height (auto-detected if 0)")
+	patterns := fs.String("patterns", "", "comma-separated extra alert patterns (e.g. \"esc to cancel,do you want\")")
 	_ = fs.Parse(args)
 
 	if *id == "" {
@@ -87,12 +88,22 @@ func runSpawn(socketPath string, args []string) {
 
 	command := strings.Join(fs.Args(), " ")
 
+	var alertPatterns []string
+	if *patterns != "" {
+		for _, p := range strings.Split(*patterns, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				alertPatterns = append(alertPatterns, p)
+			}
+		}
+	}
+
 	req := ipc.SpawnRequest{
-		Cmd:       "spawn",
-		SessionID: *id,
-		Command:   command,
-		Cols:      uint16(*cols),
-		Rows:      uint16(*rows),
+		Cmd:           "spawn",
+		SessionID:     *id,
+		Command:       command,
+		Cols:          uint16(*cols),
+		Rows:          uint16(*rows),
+		AlertPatterns: alertPatterns,
 	}
 
 	var resp ipc.Response
@@ -291,11 +302,19 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `ccmux-ctl — control ccmux-agent sessions
 
 Usage:
-  ccmux-ctl spawn [--id UUID] [--cols N] [--rows N] [COMMAND...]
+  ccmux-ctl spawn [--id UUID] [--cols N] [--rows N] [--patterns P1,P2] [COMMAND...]
   ccmux-ctl kill SESSION_ID
   ccmux-ctl list
   ccmux-ctl attach SESSION_ID
   ccmux-ctl rename SESSION_ID NAME
+
+Flags (spawn):
+  --id       session UUID (auto-generated if empty)
+  --cols     terminal width  (auto-detected from current terminal)
+  --rows     terminal height (auto-detected from current terminal)
+  --patterns comma-separated extra alert patterns; defaults already include
+             "error", "failed", "panic", "fatal", "esc to cancel",
+             "do you want", "would you like", "are you sure"
 
 Environment:
   CCMUX_IPC_SOCKET  Unix socket path (default: /tmp/ccmux.sock)`)

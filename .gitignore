@@ -16,6 +16,7 @@ go.work.sum
 /backend/server
 /agent/ccmux
 /agent/ccmux-agent
+/bin/
 dist/
 
 # Environment / secrets

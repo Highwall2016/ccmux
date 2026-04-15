@@ -77,6 +77,14 @@ func (s *Session) Wait() (int, error) {
 	return 0, nil
 }
 
+// Kill sends SIGKILL to the session's process so it exits promptly.
+// Call Close afterwards to release the PTY master.
+func (s *Session) Kill() {
+	if s.cmd.Process != nil {
+		_ = s.cmd.Process.Kill()
+	}
+}
+
 // Close closes the PTY master file descriptor, signalling EOF to readers.
 func (s *Session) Close() {
 	s.mu.Lock()

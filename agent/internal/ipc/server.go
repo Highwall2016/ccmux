@@ -13,11 +13,12 @@ import (
 
 // SpawnRequest asks the agent to start a new PTY session.
 type SpawnRequest struct {
-	Cmd       string `json:"cmd"`        // must be "spawn"
-	SessionID string `json:"session_id"` // must be a UUID (caller-generated)
-	Command   string `json:"command"`    // shell command; empty = default shell
-	Cols      uint16 `json:"cols"`       // terminal width; 0 → 80
-	Rows      uint16 `json:"rows"`       // terminal height; 0 → 24
+	Cmd            string   `json:"cmd"`             // must be "spawn"
+	SessionID      string   `json:"session_id"`      // must be a UUID (caller-generated)
+	Command        string   `json:"command"`         // shell command; empty = default shell
+	Cols           uint16   `json:"cols"`            // terminal width; 0 → 80
+	Rows           uint16   `json:"rows"`            // terminal height; 0 → 24
+	AlertPatterns  []string `json:"alert_patterns,omitempty"` // extra alert patterns beyond defaults
 }
 
 // KillRequest asks the agent to terminate a PTY session.
@@ -65,11 +66,11 @@ type Response struct {
 
 // Handler dispatches incoming IPC commands.
 type Handler struct {
-	OnSpawn  func(sessionID, command string, cols, rows uint16) error
+	OnSpawn  func(sessionID, command string, cols, rows uint16, alertPatterns []string) error
 	OnKill   func(sessionID string) error
 	OnList   func() []string
-	OnResize  func(sessionID string, cols, rows uint16) error
-	OnRename  func(sessionID, name string) error
+	OnResize func(sessionID string, cols, rows uint16) error
+	OnRename func(sessionID, name string) error
 	// OnAttach streams raw PTY I/O over conn after sending the OK response.
 	// It owns conn for its lifetime and must close it when done.
 	OnAttach func(sessionID string, conn net.Conn) error
@@ -139,7 +140,7 @@ func (h *Handler) handle(conn net.Conn) {
 		if req.Rows == 0 {
 			req.Rows = 24
 		}
-		if err := h.OnSpawn(req.SessionID, req.Command, req.Cols, req.Rows); err != nil {
+		if err := h.OnSpawn(req.SessionID, req.Command, req.Cols, req.Rows, req.AlertPatterns); err != nil {
 			resp.Error = err.Error()
 		} else {
 			resp.OK = true

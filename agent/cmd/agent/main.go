@@ -89,6 +89,7 @@ func main() {
 		},
 		// onAlert: called when a watch pattern matches PTY output.
 		func(sessionID, pattern string, excerpt []byte) {
+			log.Printf("[agent] alert session=%s pattern=%q excerpt=%q", sessionID, pattern, excerpt)
 			ap := protocol.AlertPayload{Pattern: pattern, Excerpt: excerpt}
 			payload, err := msgpack.Marshal(&ap)
 			if err != nil {
@@ -125,7 +126,7 @@ func main() {
 
 	// IPC server: Unix socket for local session management.
 	ipcHandler := ipc.Handler{
-		OnSpawn: func(callerID, command string, cols, rows uint16) error {
+		OnSpawn: func(callerID, command string, cols, rows uint16, alertPatterns []string) error {
 			// If the caller didn't supply an ID, generate a UUID v4.
 			sessionID := callerID
 			if sessionID == "" {
@@ -137,6 +138,10 @@ func main() {
 			}
 			if err := ptyMgr.Spawn(sessionID, command, cols, rows); err != nil {
 				return err
+			}
+			// Register any extra alert patterns requested by the caller.
+			if len(alertPatterns) > 0 {
+				ptyMgr.SetExtraAlertPatterns(sessionID, alertPatterns)
 			}
 			// Notify backend about the new session.
 			announceSession(wsConn, sessionID, command)
