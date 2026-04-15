@@ -128,23 +128,14 @@ func main() {
 	// running so the backend and mobile see the correct live state.
 	wsConn.SetConnectHandler(func() {
 		for _, id := range ptyMgr.List() {
-			announceSession(wsConn, id, "")
+			announceSession(wsConn, id, "", "")
 			log.Printf("[agent] re-announced live session %s", id)
 		}
 	})
 
 	// IPC server: Unix socket for local session management.
 	ipcHandler := ipc.Handler{
-		OnSpawn: func(callerID, command string, cols, rows uint16, alertPatterns []string) error {
-			// If the caller didn't supply an ID, generate a UUID v4.
-			sessionID := callerID
-			if sessionID == "" {
-				var err error
-				sessionID, err = newUUID()
-				if err != nil {
-					return fmt.Errorf("generate session ID: %w", err)
-				}
-			}
+		OnSpawn: func(sessionID, name, command string, cols, rows uint16, alertPatterns []string) error {
 			if err := ptyMgr.Spawn(sessionID, command, cols, rows); err != nil {
 				return err
 			}
@@ -153,7 +144,7 @@ func main() {
 				ptyMgr.SetExtraAlertPatterns(sessionID, alertPatterns)
 			}
 			// Notify backend about the new session.
-			announceSession(wsConn, sessionID, command)
+			announceSession(wsConn, sessionID, name, command)
 			return nil
 		},
 		OnKill:   ptyMgr.Kill,
@@ -232,10 +223,11 @@ func newUUID() (string, error) {
 
 // announceSession sends TypeSessionStatus "active" to the backend so it can
 // create the session record.
-func announceSession(conn *relay.Conn, sessionID, command string) {
+func announceSession(conn *relay.Conn, sessionID, name, command string) {
 	sp := protocol.SessionStatusPayload{
 		SessionID: sessionID,
 		Status:    "active",
+		Name:      name,
 		Command:   command,
 	}
 	payload, err := msgpack.Marshal(&sp)

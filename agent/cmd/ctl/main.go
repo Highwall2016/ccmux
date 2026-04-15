@@ -21,15 +21,12 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"regexp"
 	"strings"
 	"syscall"
 
 	"github.com/ccmux/agent/internal/ipc"
 	"golang.org/x/term"
 )
-
-var reUUID = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -62,20 +59,15 @@ func main() {
 
 func runSpawn(socketPath string, args []string) {
 	fs := flag.NewFlagSet("new", flag.ExitOnError)
-	id := fs.String("id", "", "session UUID (generated if empty)")
+	name := fs.String("name", "", "human-readable display name for the session")
 	cols := fs.Uint("cols", 0, "terminal width (auto-detected if 0)")
 	rows := fs.Uint("rows", 0, "terminal height (auto-detected if 0)")
 	patterns := fs.String("patterns", "", "comma-separated extra alert patterns (e.g. \"esc to cancel,do you want\")")
 	_ = fs.Parse(args)
 
-	if *id == "" {
-		var err error
-		*id, err = newUUID()
-		if err != nil {
-			fatalf("generate UUID: %v", err)
-		}
-	} else if !reUUID.MatchString(*id) {
-		fatalf("--id %q is not a valid UUID (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)", *id)
+	sessionID, err := newUUID()
+	if err != nil {
+		fatalf("generate UUID: %v", err)
 	}
 
 	// Auto-detect terminal size.
@@ -108,7 +100,8 @@ func runSpawn(socketPath string, args []string) {
 
 	req := ipc.SpawnRequest{
 		Cmd:           "spawn",
-		SessionID:     *id,
+		SessionID:     sessionID,
+		Name:          *name,
 		Command:       command,
 		Cols:          uint16(*cols),
 		Rows:          uint16(*rows),
@@ -122,7 +115,7 @@ func runSpawn(socketPath string, args []string) {
 	if !resp.OK {
 		fatalf("spawn failed: %s", resp.Error)
 	}
-	fmt.Println(*id)
+	fmt.Println(sessionID)
 }
 
 func runKill(socketPath string, args []string) {
@@ -311,14 +304,14 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `ccmux — control ccmux-agent sessions
 
 Usage:
-  ccmux new [--id UUID] [--cols N] [--rows N] [--patterns P1,P2] [COMMAND...]
+  ccmux new [--name NAME] [--cols N] [--rows N] [--patterns P1,P2] [COMMAND...]
   ccmux kill SESSION_ID
   ccmux list
   ccmux attach SESSION_ID
   ccmux rename SESSION_ID NAME
 
 Flags (new):
-  --id       session UUID (auto-generated if empty)
+  --name     human-readable display name shown in the mobile app
   --cols     terminal width  (auto-detected from current terminal)
   --rows     terminal height (auto-detected from current terminal)
   --patterns comma-separated extra alert patterns; defaults already include
@@ -326,6 +319,7 @@ Flags (new):
              "do you want", "would you like", "are you sure"
 
   COMMAND defaults to bash when omitted.
+  SESSION_ID is always auto-generated as a UUID.
 
 Environment:
   CCMUX_IPC_SOCKET  Unix socket path (default: /tmp/ccmux.sock)`)
