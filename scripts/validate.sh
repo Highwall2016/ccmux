@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# validate.sh — local validation of all ccmux-ctl operations.
+# validate.sh — local validation of all ccmux operations.
 #
 # Tests (in order):
 #   1. spawn  — create a new session running bash
@@ -21,7 +21,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$REPO_ROOT/.env.agent"
-CTL="$REPO_ROOT/bin/ccmux-ctl"
+CTL="$REPO_ROOT/bin/ccmux"
 
 # ─── helpers ───────────────────────────────────────────────────────────────────
 
@@ -45,7 +45,7 @@ fi
 # ─── step 1: spawn ─────────────────────────────────────────────────────────────
 
 step "1 · spawn"
-SESSION_ID=$("$CTL" spawn bash 2>/dev/null)
+SESSION_ID=$("$CTL" new bash 2>/dev/null)
 [ -z "$SESSION_ID" ] && fail "spawn returned empty session ID"
 pass "spawned session: $SESSION_ID"
 
@@ -90,7 +90,7 @@ pass "session no longer in list"
 # ─── step 7: spawn with extra alert patterns (Claude Code) ─────────────────────
 
 step "7 · spawn with Claude Code alert patterns"
-CC_SESSION=$("$CTL" spawn \
+CC_SESSION=$("$CTL" new \
   --patterns "esc to cancel,do you want,would you like,task complete" \
   bash 2>/dev/null)
 [ -z "$CC_SESSION" ] && fail "spawn with patterns returned empty session ID"
@@ -113,6 +113,6 @@ echo "  All CTL operations passed!"
 echo ""
 echo "  Next: test notifications"
 echo "    1. Ensure mobile app is connected to http://localhost:8080"
-echo "    2. Run:  $CTL spawn claude"
+echo "    2. Run:  $CTL new claude"
 echo "    3. Claude Code will auto-notify mobile on questions + exit"
 echo "────────────────────────────────────────────────────────────"

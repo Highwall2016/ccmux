@@ -1,11 +1,12 @@
-// ccmux-ctl — local control CLI for the ccmux desktop agent.
+// ccmux — local control CLI for the ccmux desktop agent.
 //
 // Usage:
 //
-//	ccmux-ctl spawn [--id UUID] [--cols N] [--rows N] [COMMAND...]
-//	ccmux-ctl kill SESSION_ID
-//	ccmux-ctl list
-//	ccmux-ctl attach SESSION_ID
+//	ccmux new [--id UUID] [--cols N] [--rows N] [--patterns P] [COMMAND...]
+//	ccmux kill SESSION_ID
+//	ccmux list
+//	ccmux attach SESSION_ID
+//	ccmux rename SESSION_ID NAME
 //
 // It communicates with a running ccmux-agent via its Unix domain socket
 // (default: /tmp/ccmux.sock, override with CCMUX_IPC_SOCKET).
@@ -39,7 +40,7 @@ func main() {
 	}
 
 	switch os.Args[1] {
-	case "spawn":
+	case "new":
 		runSpawn(socketPath, os.Args[2:])
 	case "kill":
 		runKill(socketPath, os.Args[2:])
@@ -57,7 +58,7 @@ func main() {
 }
 
 func runSpawn(socketPath string, args []string) {
-	fs := flag.NewFlagSet("spawn", flag.ExitOnError)
+	fs := flag.NewFlagSet("new", flag.ExitOnError)
 	id := fs.String("id", "", "session UUID (generated if empty)")
 	cols := fs.Uint("cols", 0, "terminal width (auto-detected if 0)")
 	rows := fs.Uint("rows", 0, "terminal height (auto-detected if 0)")
@@ -87,6 +88,9 @@ func runSpawn(socketPath string, args []string) {
 	}
 
 	command := strings.Join(fs.Args(), " ")
+	if command == "" {
+		command = "bash"
+	}
 
 	var alertPatterns []string
 	if *patterns != "" {
@@ -299,22 +303,24 @@ func fatalf(format string, args ...any) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, `ccmux-ctl — control ccmux-agent sessions
+	fmt.Fprintln(os.Stderr, `ccmux — control ccmux-agent sessions
 
 Usage:
-  ccmux-ctl spawn [--id UUID] [--cols N] [--rows N] [--patterns P1,P2] [COMMAND...]
-  ccmux-ctl kill SESSION_ID
-  ccmux-ctl list
-  ccmux-ctl attach SESSION_ID
-  ccmux-ctl rename SESSION_ID NAME
+  ccmux new [--id UUID] [--cols N] [--rows N] [--patterns P1,P2] [COMMAND...]
+  ccmux kill SESSION_ID
+  ccmux list
+  ccmux attach SESSION_ID
+  ccmux rename SESSION_ID NAME
 
-Flags (spawn):
+Flags (new):
   --id       session UUID (auto-generated if empty)
   --cols     terminal width  (auto-detected from current terminal)
   --rows     terminal height (auto-detected from current terminal)
   --patterns comma-separated extra alert patterns; defaults already include
              "error", "failed", "panic", "fatal", "esc to cancel",
              "do you want", "would you like", "are you sure"
+
+  COMMAND defaults to bash when omitted.
 
 Environment:
   CCMUX_IPC_SOCKET  Unix socket path (default: /tmp/ccmux.sock)`)

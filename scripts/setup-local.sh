@@ -2,7 +2,7 @@
 # setup-local.sh — bootstrap the full ccmux stack for local development.
 #
 # What it does:
-#   1. Builds the ccmux-agent and ccmux-ctl binaries.
+#   1. Builds the ccmux-agent and ccmux binaries.
 #   2. Starts Postgres + Redis via docker-compose (if not already running).
 #   3. Starts the backend in the background (auto-migrates on first run).
 #   4. Registers a test user + device via the HTTP API.
@@ -34,7 +34,7 @@ TEST_PASSWORD="${TEST_PASSWORD:-devpassword123}"
 DEVICE_NAME="${DEVICE_NAME:-$(hostname)-dev}"
 
 AGENT_BIN="$REPO_ROOT/bin/ccmux-agent"
-CTL_BIN="$REPO_ROOT/bin/ccmux-ctl"
+CTL_BIN="$REPO_ROOT/bin/ccmux"
 ENV_FILE="$REPO_ROOT/.env.agent"
 BACKEND_LOG="$REPO_ROOT/.backend.log"
 
