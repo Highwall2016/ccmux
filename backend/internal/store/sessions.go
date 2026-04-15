@@ -116,6 +116,12 @@ func (db *DB) UpdateStatus(id, status string, exitCode *int) error {
 	return err
 }
 
+// RenameSession updates the display name of a session.
+func (db *DB) RenameSession(id, name string) error {
+	_, err := db.Exec(`UPDATE terminal_sessions SET name=$1 WHERE id=$2`, name, id)
+	return err
+}
+
 // TouchSession updates last_activity.
 func (db *DB) TouchSession(id string) error {
 	_, err := db.Exec(`UPDATE terminal_sessions SET last_activity=NOW() WHERE id=$1`, id)

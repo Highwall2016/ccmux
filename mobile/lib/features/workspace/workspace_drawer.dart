@@ -55,6 +55,10 @@ class WorkspaceDrawer extends ConsumerWidget {
                                 .openSession(sessionId);
                             Navigator.of(context).pop(); // close drawer
                           },
+                          onRenameSession: (sessionId, currentName) =>
+                              _showRenameDialog(context, ref, device.id, sessionId, currentName),
+                          onKillSession: (sessionId) =>
+                              _confirmKill(context, ref, device.id, sessionId),
                         );
                       },
                     ),
@@ -63,5 +67,72 @@ class WorkspaceDrawer extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _showRenameDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String deviceId,
+    String sessionId,
+    String currentName,
+  ) async {
+    final controller = TextEditingController(text: currentName);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename session'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name'),
+          onSubmitted: (_) => Navigator.pop(ctx, true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && controller.text.trim().isNotEmpty) {
+      await ref.read(workspaceProvider.notifier)
+          .renameSession(deviceId, sessionId, controller.text.trim());
+    }
+    controller.dispose();
+  }
+
+  Future<void> _confirmKill(
+    BuildContext context,
+    WidgetRef ref,
+    String deviceId,
+    String sessionId,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Kill session?'),
+        content: const Text('This will terminate the process immediately.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Kill'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await ref.read(workspaceProvider.notifier)
+          .killSession(deviceId, sessionId);
+    }
   }
 }

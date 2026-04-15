@@ -12,6 +12,8 @@ const (
 	TypeScrollback     = uint8(0x12)
 	TypeScrollbackDone = uint8(0x13)
 	TypeAlert          = uint8(0x14)
+	TypeKillSession    = uint8(0x15) // backend → agent: kill the session
+	TypeRenameSession  = uint8(0x16) // agent → backend: rename the session
 	TypeAuth           = uint8(0x20)
 	TypeAuthOK         = uint8(0x21)
 	TypeAuthFail       = uint8(0x22)
@@ -41,6 +43,12 @@ type SessionStatusPayload struct {
 	ExitCode  *int   `msgpack:"exit_code,omitempty"`
 	Name      string `msgpack:"name,omitempty"`
 	Command   string `msgpack:"cmd,omitempty"`
+}
+
+// RenamePayload is used with TypeRenameSession.
+type RenamePayload struct {
+	SessionID string `msgpack:"id"`
+	Name      string `msgpack:"name"`
 }
 
 // AlertPayload is used with TypeAlert.

@@ -5,17 +5,24 @@ class DeviceSection extends StatelessWidget {
   final DeviceModel device;
   final List<SessionModel> sessions;
   final void Function(String sessionId) onSessionTap;
+  final void Function(String sessionId, String currentName) onRenameSession;
+  final void Function(String sessionId) onKillSession;
 
   const DeviceSection({
     super.key,
     required this.device,
     required this.sessions,
     required this.onSessionTap,
+    required this.onRenameSession,
+    required this.onKillSession,
   });
 
   @override
   Widget build(BuildContext context) {
     final online = device.isOnline;
+    // Only show active sessions; exited/killed ones are hidden.
+    final activeSessions = sessions.where((s) => s.isActive).toList();
+
     return ExpansionTile(
       leading: Icon(
         Icons.computer,
@@ -25,37 +32,61 @@ class DeviceSection extends StatelessWidget {
       subtitle: Text(online ? 'online' : 'offline',
           style: TextStyle(color: online ? Colors.green : Colors.grey, fontSize: 12)),
       initiallyExpanded: online,
-      children: sessions.isEmpty
+      children: activeSessions.isEmpty
           ? [
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text('No sessions', style: TextStyle(color: Colors.grey)),
+                child: Text('No active sessions', style: TextStyle(color: Colors.grey)),
               )
             ]
-          : sessions.map((s) {
-              final isActive = s.isActive;
+          : activeSessions.map((s) {
+              final label = s.name.isNotEmpty ? s.name : s.command;
               return ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 32),
-                leading: Icon(
-                  Icons.terminal,
-                  size: 18,
-                  color: isActive ? null : Colors.grey,
-                ),
+                leading: const Icon(Icons.terminal, size: 18),
                 title: Text(
-                  s.name.isNotEmpty ? s.name : s.command,
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    color: isActive ? null : Colors.grey,
-                  ),
+                  label,
+                  style: const TextStyle(fontFamily: 'monospace'),
                   overflow: TextOverflow.ellipsis,
                 ),
-                subtitle: isActive
-                    ? null
-                    : Text('exited (${s.exitCode ?? '?'})',
-                        style: const TextStyle(fontSize: 11, color: Colors.red)),
-                onTap: isActive ? () => onSessionTap(s.id) : null,
+                onTap: () => onSessionTap(s.id),
+                onLongPress: () => _showSessionMenu(context, s),
+                trailing: IconButton(
+                  icon: const Icon(Icons.more_vert, size: 18),
+                  onPressed: () => _showSessionMenu(context, s),
+                ),
               );
             }).toList(),
+    );
+  }
+
+  void _showSessionMenu(BuildContext context, SessionModel s) {
+    final label = s.name.isNotEmpty ? s.name : s.command;
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.drive_file_rename_outline),
+              title: Text('Rename "$label"'),
+              onTap: () {
+                Navigator.pop(ctx);
+                onRenameSession(s.id, s.name.isNotEmpty ? s.name : s.command);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.stop_circle_outlined, color: Colors.red),
+              title: Text('Kill "$label"', style: const TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(ctx);
+                onKillSession(s.id);
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

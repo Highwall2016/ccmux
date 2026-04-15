@@ -31,7 +31,7 @@ class PushService {
     await _registerToken(token);
 
     // Re-register if the token rotates.
-    FirebaseMessaging.onTokenRefresh.listen(_registerToken);
+    FirebaseMessaging.instance.onTokenRefresh.listen(_registerToken);
   }
 
   Future<void> _registerToken(String token) async {

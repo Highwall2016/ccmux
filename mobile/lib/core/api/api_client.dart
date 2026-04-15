@@ -61,6 +61,15 @@ class ApiClient {
     return r.data!.map((e) => SessionModel.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  Future<void> renameSession(String deviceId, String sessionId, String name) async {
+    await _dio.patch<void>('/api/devices/$deviceId/sessions/$sessionId',
+        data: {'name': name});
+  }
+
+  Future<void> killSession(String deviceId, String sessionId) async {
+    await _dio.delete<void>('/api/devices/$deviceId/sessions/$sessionId');
+  }
+
   // Push tokens
 
   Future<void> registerPushToken({

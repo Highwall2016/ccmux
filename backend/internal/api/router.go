@@ -47,6 +47,8 @@ func (a *App) NewRouter() http.Handler {
 			r.Post("/devices", a.handleRegisterDevice)
 			r.Delete("/devices/{deviceID}", a.handleDeleteDevice)
 			r.Get("/devices/{deviceID}/sessions", a.handleListSessions)
+			r.Patch("/devices/{deviceID}/sessions/{sessionID}", a.handleRenameSession)
+			r.Delete("/devices/{deviceID}/sessions/{sessionID}", a.handleKillSession)
 
 			r.Post("/push/register", a.handleRegisterPushToken)
 			r.Delete("/push/register", a.handleDeletePushToken)

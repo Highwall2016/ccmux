@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -87,7 +88,15 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
       return;
     }
 
-    final terminal = Terminal(maxLines: 10000);
+    final terminal = Terminal(
+      maxLines: 10000,
+      onOutput: (data) {
+        sendInput(sessionId, Uint8List.fromList(utf8.encode(data)));
+      },
+      onResize: (cols, rows, pixelWidth, pixelHeight) {
+        sendResize(sessionId, cols, rows);
+      },
+    );
     final sessions = Map<String, TerminalSessionState>.from(current.sessions);
     sessions[sessionId] = TerminalSessionState(id: sessionId, terminal: terminal);
 
@@ -162,7 +171,7 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
     final sess = current.sessions[sessionId];
     if (sess == null) return;
 
-    sess.terminal.write(String.fromCharCodes(payload));
+    sess.terminal.write(utf8.decode(payload, allowMalformed: true));
 
     final isActive = sessionId == current.activeSessionId;
     if (!isActive) {
@@ -174,18 +183,22 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
 
   void _updateSessionStatus(Uint8List? payload) {
     if (payload == null) return;
-    final u = Unpacker.fromList(payload);
-    final mapLen = u.unpackMapLength();
     String? id, status;
     int? exitCode;
-    for (int i = 0; i < mapLen; i++) {
-      final k = u.unpackString()!;
-      switch (k) {
-        case 'id':        id       = u.unpackString();
-        case 'status':    status   = u.unpackString();
-        case 'exit_code': exitCode = u.unpackInt();
-        default:          u.unpackString();
+    try {
+      final u = Unpacker.fromList(payload);
+      final mapLen = u.unpackMapLength();
+      for (int i = 0; i < mapLen; i++) {
+        final k = u.unpackString()!;
+        switch (k) {
+          case 'id':        id       = u.unpackString();
+          case 'status':    status   = u.unpackString();
+          case 'exit_code': exitCode = u.unpackInt();
+          default:          u.unpackString(); // name, cmd are strings
+        }
       }
+    } catch (_) {
+      return;
     }
     if (id == null || status == null) return;
     final current = state.valueOrNull;

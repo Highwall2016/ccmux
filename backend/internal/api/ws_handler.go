@@ -124,6 +124,28 @@ func (a *App) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+		case protocol.TypeRenameSession:
+			var rp protocol.RenamePayload
+			if err := msgpack.Unmarshal(pkt.Payload, &rp); err != nil || rp.SessionID == "" {
+				return
+			}
+			_ = a.DB.RenameSession(rp.SessionID, rp.Name)
+			// Broadcast updated name as a TypeSessionStatus so clients refresh.
+			sp := protocol.SessionStatusPayload{
+				SessionID: rp.SessionID,
+				Status:    "active",
+				Name:      rp.Name,
+			}
+			if payload, err := msgpack.Marshal(&sp); err == nil {
+				if bcast, err := (&protocol.Packet{
+					Type:    protocol.TypeSessionStatus,
+					Session: rp.SessionID,
+					Payload: payload,
+				}).Encode(); err == nil {
+					a.Hub.Broadcast(rp.SessionID, bcast)
+				}
+			}
+
 		case protocol.TypePing:
 			reply, _ := (&protocol.Packet{Type: protocol.TypePong}).Encode()
 			agentConn.Send(reply)

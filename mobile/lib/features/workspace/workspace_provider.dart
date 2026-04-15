@@ -53,6 +53,18 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
     return WorkspaceState(devices: devices, sessionsByDevice: sessMap);
   }
 
+  Future<void> renameSession(String deviceId, String sessionId, String name) async {
+    final api = ref.read(apiClientProvider);
+    await api.renameSession(deviceId, sessionId, name);
+    // UI update comes via WS TypeSessionStatus broadcast.
+  }
+
+  Future<void> killSession(String deviceId, String sessionId) async {
+    final api = ref.read(apiClientProvider);
+    await api.killSession(deviceId, sessionId);
+    // UI update comes via WS TypeSessionStatus "killed" broadcast from agent exit.
+  }
+
   Future<void> refresh() async {
     state = const AsyncValue.loading();
     try {
@@ -64,43 +76,58 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
 
   void _onSessionStatus(Packet pkt) {
     if (pkt.payload == null) return;
-    final u = Unpacker.fromList(pkt.payload!);
-    final mapLen = u.unpackMapLength();
-    String? id, status;
-    for (int i = 0; i < mapLen; i++) {
-      final k = u.unpackString()!;
-      switch (k) {
-        case 'id':     id     = u.unpackString();
-        case 'status': status = u.unpackString();
-        default:       u.unpackString();
+    String? id, status, name;
+    try {
+      final u = Unpacker.fromList(pkt.payload!);
+      final mapLen = u.unpackMapLength();
+      for (int i = 0; i < mapLen; i++) {
+        final k = u.unpackString()!;
+        switch (k) {
+          case 'id':        id     = u.unpackString();
+          case 'status':    status = u.unpackString();
+          case 'name':      name   = u.unpackString();
+          // Consume known non-string fields so the unpacker stays in sync.
+          case 'exit_code': u.unpackInt();
+          default:          u.unpackString(); // cmd is a string
+        }
       }
+    } catch (_) {
+      // Malformed packet — fall back to a full refresh below.
     }
     if (id == null || status == null) return;
 
     final current = state.valueOrNull;
     if (current == null) return;
 
+    // Try to find the session in the existing map.
     final updated = Map<String, List<SessionModel>>.from(current.sessionsByDevice);
+    bool found = false;
     for (final entry in updated.entries) {
       final idx = entry.value.indexWhere((s) => s.id == id);
       if (idx != -1) {
+        found = true;
         final old = entry.value[idx];
-        final newSess = SessionModel(
+        final newList = List<SessionModel>.from(entry.value);
+        newList[idx] = SessionModel(
           id:           old.id,
-          name:         old.name,
+          name:         name ?? old.name,
           command:      old.command,
           status:       status,
           exitCode:     old.exitCode,
           startedAt:    old.startedAt,
           lastActivity: old.lastActivity,
         );
-        final newList = List<SessionModel>.from(entry.value);
-        newList[idx] = newSess;
         updated[entry.key] = newList;
         break;
       }
     }
-    state = AsyncValue.data(current.copyWith(sessionsByDevice: updated));
+
+    if (found) {
+      state = AsyncValue.data(current.copyWith(sessionsByDevice: updated));
+    } else if (status == 'active') {
+      // New session announced by the agent — fetch the full list from the API.
+      refresh();
+    }
   }
 }
 

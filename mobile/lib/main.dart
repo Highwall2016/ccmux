@@ -6,10 +6,18 @@ import 'features/notifications/push_service.dart';
 import 'features/auth/auth_provider.dart';
 import 'router.dart';
 
+bool firebaseAvailable = false;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
-  await initNotifications();
+  try {
+    await Firebase.initializeApp();
+    await initNotifications();
+    firebaseAvailable = true;
+  } catch (e) {
+    // Firebase not configured yet — push notifications disabled.
+    debugPrint('Firebase init skipped: $e');
+  }
   runApp(const ProviderScope(child: CcmuxApp()));
 }
 
@@ -25,20 +33,24 @@ class _CcmuxAppState extends ConsumerState<CcmuxApp> {
   void initState() {
     super.initState();
     // After auth succeeds, register the push token.
-    ref.listenManual(authProvider, (prev, next) {
-      if (next.value is AuthLoggedIn) {
-        ref.read(pushServiceProvider).init();
-      }
-    });
+    if (firebaseAvailable) {
+      ref.listenManual(authProvider, (prev, next) {
+        if (next.value is AuthLoggedIn) {
+          ref.read(pushServiceProvider).init();
+        }
+      });
+    }
     // Handle notification tap from terminated state.
-    getInitialSessionId().then((sid) {
-      if (sid != null) {
-        // TODO: open the session once the terminal provider is ready.
-      }
-    });
-    listenNotificationTaps((sid) {
-      // TODO: navigate to session by sid using the router.
-    });
+    if (firebaseAvailable) {
+      getInitialSessionId().then((sid) {
+        if (sid != null) {
+          // TODO: open the session once the terminal provider is ready.
+        }
+      });
+      listenNotificationTaps((sid) {
+        // TODO: navigate to session by sid using the router.
+      });
+    }
   }
 
   @override

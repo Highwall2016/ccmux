@@ -32,6 +32,10 @@ type StatusFunc func(sessionID string, exitCode int)
 // AlertFunc is called when a watch pattern matches PTY output.
 type AlertFunc func(sessionID, pattern string, excerpt []byte)
 
+type localConsumer struct {
+	fn func([]byte)
+}
+
 // Manager owns all live PTY sessions and drives their I/O loops.
 type Manager struct {
 	sessions     map[string]*Session
@@ -44,6 +48,10 @@ type Manager struct {
 	// alertAt tracks the last alert time per session to enforce cooldown.
 	alertAt   map[string]time.Time
 	alertAtMu sync.Mutex
+
+	// consumers holds local attach subscribers per session.
+	consumers   map[string][]*localConsumer
+	consumersMu sync.RWMutex
 }
 
 // NewManager creates a Manager.
@@ -55,6 +63,7 @@ func NewManager(shell string, onOutput OutputFunc, onExit StatusFunc, onAlert Al
 		onAlert:      onAlert,
 		defaultShell: shell,
 		alertAt:      make(map[string]time.Time),
+		consumers:    make(map[string][]*localConsumer),
 	}
 }
 
@@ -85,6 +94,11 @@ func (m *Manager) Spawn(id, command string, cols, rows uint16) error {
 				chunk := make([]byte, n)
 				copy(chunk, buf[:n])
 				m.onOutput(id, chunk)
+				m.consumersMu.RLock()
+				for _, c := range m.consumers[id] {
+					c.fn(chunk)
+				}
+				m.consumersMu.RUnlock()
 				if m.onAlert != nil {
 					m.checkAlerts(id, chunk)
 				}
@@ -157,6 +171,38 @@ func (m *Manager) List() []string {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+// AddOutputConsumer registers fn to receive PTY output for sessionID.
+// Returns a cancel func that deregisters the consumer when called.
+func (m *Manager) AddOutputConsumer(sessionID string, fn func([]byte)) (cancel func(), err error) {
+	m.mu.RLock()
+	_, ok := m.sessions[sessionID]
+	m.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("session %s not found", sessionID)
+	}
+	c := &localConsumer{fn: fn}
+	m.consumersMu.Lock()
+	m.consumers[sessionID] = append(m.consumers[sessionID], c)
+	m.consumersMu.Unlock()
+
+	return func() {
+		m.consumersMu.Lock()
+		defer m.consumersMu.Unlock()
+		cs := m.consumers[sessionID]
+		out := cs[:0]
+		for _, existing := range cs {
+			if existing != c {
+				out = append(out, existing)
+			}
+		}
+		if len(out) == 0 {
+			delete(m.consumers, sessionID)
+		} else {
+			m.consumers[sessionID] = out
+		}
+	}, nil
 }
 
 // checkAlerts scans a PTY output chunk for alert patterns and fires onAlert

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:xterm/xterm.dart';
+import 'package:xterm/xterm.dart' as xterm;
 import 'terminal_provider.dart';
 
 class TerminalView extends ConsumerStatefulWidget {
@@ -14,29 +14,19 @@ class TerminalView extends ConsumerStatefulWidget {
 }
 
 class _TerminalViewState extends ConsumerState<TerminalView> {
-  late final TerminalController _controller;
+  late final xterm.TerminalController _controller;
   double _fontSize = 14.0;
-  // Last known size to avoid sending duplicate resize events.
-  int _lastCols = 0;
-  int _lastRows = 0;
 
   @override
   void initState() {
     super.initState();
-    _controller = TerminalController();
+    _controller = xterm.TerminalController();
   }
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-  void _onResize(int cols, int rows) {
-    if (cols == _lastCols && rows == _lastRows) return;
-    _lastCols = cols;
-    _lastRows = rows;
-    ref.read(terminalProvider.notifier).sendResize(widget.sessionId, cols, rows);
   }
 
   @override
@@ -57,16 +47,8 @@ class _TerminalViewState extends ConsumerState<TerminalView> {
           return xterm.TerminalView(
             sess.terminal,
             controller: _controller,
-            theme: TerminalThemes.defaultTheme,
-            textStyle: TerminalTextStyle(fontSize: _fontSize),
-            onOutput: (data) {
-              // User typed — send input to the backend.
-              ref.read(terminalProvider.notifier).sendInput(
-                widget.sessionId,
-                Uint8List.fromList(data.codeUnits),
-              );
-            },
-            onResize: _onResize,
+            theme: xterm.TerminalThemes.defaultTheme,
+            textStyle: xterm.TerminalStyle(fontSize: _fontSize),
           );
         },
       ),

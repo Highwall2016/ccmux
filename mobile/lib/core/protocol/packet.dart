@@ -67,7 +67,10 @@ class Packet {
         case 's':
           session = u.unpackString();
         case 'p':
-          payload = u.unpackBinary();
+          final binary = u.unpackBinary();
+          if (binary != null) {
+            payload = Uint8List.fromList(binary);
+          }
         default:
           u.unpackString(); // consume unknown fields
       }

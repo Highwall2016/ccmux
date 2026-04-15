@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -116,6 +117,11 @@ func main() {
 			log.Printf("[agent] resize session %s: %v", sessionID, err)
 		}
 	})
+	wsConn.SetKillHandler(func(sessionID string) {
+		if err := ptyMgr.Kill(sessionID); err != nil {
+			log.Printf("[agent] kill session %s: %v", sessionID, err)
+		}
+	})
 
 	// IPC server: Unix socket for local session management.
 	ipcHandler := ipc.Handler{
@@ -136,8 +142,48 @@ func main() {
 			announceSession(wsConn, sessionID, command)
 			return nil
 		},
-		OnKill: ptyMgr.Kill,
-		OnList: ptyMgr.List,
+		OnKill:   ptyMgr.Kill,
+		OnList:   ptyMgr.List,
+		OnResize: ptyMgr.Resize,
+		OnRename: func(sessionID, name string) error {
+			// Notify the backend via a TypeRenameSession packet so it updates the
+			// DB and broadcasts the new name to connected mobile clients.
+			rp := protocol.RenamePayload{SessionID: sessionID, Name: name}
+			payload, err := msgpack.Marshal(&rp)
+			if err != nil {
+				return err
+			}
+			pkt, err := (&protocol.Packet{
+				Type:    protocol.TypeRenameSession,
+				Session: sessionID,
+				Payload: payload,
+			}).Encode()
+			if err != nil {
+				return err
+			}
+			wsConn.Send(pkt)
+			return nil
+		},
+		OnAttach: func(sessionID string, conn net.Conn) error {
+			defer conn.Close()
+			cancel, err := ptyMgr.AddOutputConsumer(sessionID, func(data []byte) {
+				_, _ = conn.Write(data)
+			})
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			buf := make([]byte, 4096)
+			for {
+				n, err := conn.Read(buf)
+				if n > 0 {
+					_ = ptyMgr.Write(sessionID, buf[:n])
+				}
+				if err != nil {
+					return nil
+				}
+			}
+		},
 	}
 
 	// Start IPC server in background.

@@ -27,6 +27,9 @@ type InputHandler func(sessionID string, data []byte)
 // ResizeHandler is called when the backend sends TypeResize for a session.
 type ResizeHandler func(sessionID string, cols, rows uint16)
 
+// KillHandler is called when the backend sends TypeKillSession for a session.
+type KillHandler func(sessionID string)
+
 // Conn manages the persistent WebSocket connection to the ccmux backend.
 // It reconnects automatically with exponential backoff.
 type Conn struct {
@@ -36,6 +39,7 @@ type Conn struct {
 
 	onInput  InputHandler
 	onResize ResizeHandler
+	onKill   KillHandler
 
 	sendCh chan []byte
 
@@ -60,6 +64,9 @@ func (c *Conn) SetInputHandler(h InputHandler) { c.onInput = h }
 
 // SetResizeHandler replaces the resize handler. Must be called before Run.
 func (c *Conn) SetResizeHandler(h ResizeHandler) { c.onResize = h }
+
+// SetKillHandler replaces the kill handler. Must be called before Run.
+func (c *Conn) SetKillHandler(h KillHandler) { c.onKill = h }
 
 // Send enqueues a packet for delivery to the backend.
 // Non-blocking: drops the packet if the buffer is full.
@@ -217,6 +224,11 @@ func (c *Conn) handlePacket(pkt *protocol.Packet, raw []byte) {
 			if err := msgpack.Unmarshal(pkt.Payload, &rp); err == nil {
 				c.onResize(pkt.Session, rp.Cols, rp.Rows)
 			}
+		}
+
+	case protocol.TypeKillSession:
+		if c.onKill != nil && pkt.Session != "" {
+			c.onKill(pkt.Session)
 		}
 
 	case protocol.TypePong:
