@@ -13,20 +13,26 @@ import '../../core/websocket/ws_reconnect.dart';
 /// Per-session state.
 class TerminalSessionState {
   final String id;
-  final String name;
+  // Nullable backing field so hot-reload artifacts never crash the getter.
+  final String? _name;
+  String get name {
+    final n = _name;
+    return (n != null && n.isNotEmpty) ? n : id.substring(0, 8);
+  }
+
   final Terminal terminal;
   final String status; // active | exited | killed
   final int? exitCode;
   final bool hasNewOutput;
 
-  const TerminalSessionState({
+  TerminalSessionState({
     required this.id,
-    required this.name,
+    String? name,
     required this.terminal,
     this.status = 'active',
     this.exitCode,
     this.hasNewOutput = false,
-  });
+  }) : _name = (name != null && name.isNotEmpty) ? name : null;
 
   TerminalSessionState copyWith({
     String? name,
@@ -36,7 +42,7 @@ class TerminalSessionState {
   }) =>
       TerminalSessionState(
         id:           id,
-        name:         name         ?? this.name,
+        name:         (name != null && name.isNotEmpty) ? name : _name,
         terminal:     terminal,
         status:       status       ?? this.status,
         exitCode:     exitCode     ?? this.exitCode,
@@ -203,7 +209,7 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
           case 'status':    status   = u.unpackString();
           case 'name':      name     = u.unpackString();
           case 'exit_code': exitCode = u.unpackInt();
-          default:          u.unpackString(); // cmd is a string
+          default:          u.unpackString(); // skip unknown string fields (e.g. cmd)
         }
       }
     } catch (_) {
