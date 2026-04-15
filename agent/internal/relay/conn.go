@@ -209,6 +209,7 @@ func (c *Conn) writePump(ctx context.Context, ws *websocket.Conn, errCh chan<- e
 func (c *Conn) readPump(ws *websocket.Conn, errCh chan<- error) {
 	ws.SetReadLimit(1 * 1024 * 1024)
 	ws.SetReadDeadline(time.Now().Add(pongWait))
+	// Reset deadline on WebSocket-level PONG frames (sent by gorilla-aware peers).
 	ws.SetPongHandler(func(string) error {
 		ws.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
@@ -219,6 +220,9 @@ func (c *Conn) readPump(ws *websocket.Conn, errCh chan<- error) {
 			errCh <- err
 			return
 		}
+		// Reset deadline on every received message so that application-level
+		// TypePong replies from the backend also extend the keepalive window.
+		ws.SetReadDeadline(time.Now().Add(pongWait))
 		pkt, err := protocol.Decode(raw)
 		if err != nil {
 			continue
