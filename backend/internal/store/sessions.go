@@ -134,6 +134,20 @@ func (db *DB) ResizeSession(id string, cols, rows int) error {
 	return err
 }
 
+// ReactivateSession flips a session from "exited" back to "active" and clears
+// ended_at / exit_code.  Only takes effect when status is currently "exited"
+// (i.e. sessions marked exited by MarkDeviceSessionsExited on disconnect).
+// Sessions with status "killed" are intentionally left untouched.
+func (db *DB) ReactivateSession(id string) error {
+	_, err := db.Exec(
+		`UPDATE terminal_sessions
+		 SET status='active', ended_at=NULL, exit_code=NULL
+		 WHERE id=$1 AND status='exited'`,
+		id,
+	)
+	return err
+}
+
 // MarkDeviceSessionsExited marks all "active" sessions for a device as exited
 // (exit_code = -1).  Called when the device agent (re-)connects so that stale
 // sessions from a previous agent run are cleaned up before the agent

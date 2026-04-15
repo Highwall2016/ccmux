@@ -97,8 +97,12 @@ func (a *App) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if sp.Status == "active" {
-				// Agent is announcing a newly spawned session — create the DB record.
+				// Agent is announcing a newly spawned (or re-announced on reconnect)
+				// session.  UpsertSession creates the record if new; ReactivateSession
+				// flips it back to active if MarkDeviceSessionsExited cleared it on
+				// the previous disconnect.
 				_ = a.DB.UpsertSession(sp.SessionID, device.ID, sp.Command, sp.Name, 0, 0)
+				_ = a.DB.ReactivateSession(sp.SessionID)
 			} else {
 				_ = a.DB.UpdateStatus(sp.SessionID, sp.Status, sp.ExitCode)
 				// Push notification on session exit.
