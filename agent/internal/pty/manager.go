@@ -38,10 +38,10 @@ var defaultAlertPatterns = [][]byte{
 	[]byte("panic"),
 	[]byte("fatal"),
 	// Claude Code interactive prompts
-	[]byte("esc to cancel"), // shown on every Claude Code tool-use approval
-	[]byte("do you want"),   // permission / proceed questions
+	[]byte("esc to cancel"),  // shown on every Claude Code tool-use approval
+	[]byte("do you want"),    // permission / proceed questions
 	[]byte("would you like"), // permission / proceed questions
-	[]byte("are you sure"),  // confirmation prompts
+	[]byte("are you sure"),   // confirmation prompts
 }
 
 // OutputFunc is called with each chunk of PTY output.
@@ -133,6 +133,15 @@ func (m *Manager) resolveID(nameOrID string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// ResolveID resolves a live session name or UUID to its canonical UUID.
+func (m *Manager) ResolveID(nameOrID string) (string, error) {
+	id, ok := m.resolveID(nameOrID)
+	if !ok {
+		return "", fmt.Errorf("session %q not found", nameOrID)
+	}
+	return id, nil
 }
 
 // SetExtraAlertPatterns registers additional (case-insensitive) alert patterns
@@ -242,24 +251,34 @@ func (m *Manager) Spawn(id, name, command string, cols, rows uint16) error {
 	return nil
 }
 
-// Write sends input to a session's PTY.
-func (m *Manager) Write(id string, data []byte) error {
+// Write sends input to a session's PTY. nameOrID may be the session's display
+// name or its UUID.
+func (m *Manager) Write(nameOrID string, data []byte) error {
+	id, ok := m.resolveID(nameOrID)
+	if !ok {
+		return fmt.Errorf("session %q not found", nameOrID)
+	}
 	m.mu.RLock()
 	sess, ok := m.sessions[id]
 	m.mu.RUnlock()
 	if !ok {
-		return fmt.Errorf("session %s not found", id)
+		return fmt.Errorf("session %q not found", nameOrID)
 	}
 	return sess.Write(data)
 }
 
-// Resize changes the terminal window size of a session.
-func (m *Manager) Resize(id string, cols, rows uint16) error {
+// Resize changes the terminal window size of a session. nameOrID may be the
+// session's display name or its UUID.
+func (m *Manager) Resize(nameOrID string, cols, rows uint16) error {
+	id, ok := m.resolveID(nameOrID)
+	if !ok {
+		return fmt.Errorf("session %q not found", nameOrID)
+	}
 	m.mu.RLock()
 	sess, ok := m.sessions[id]
 	m.mu.RUnlock()
 	if !ok {
-		return fmt.Errorf("session %s not found", id)
+		return fmt.Errorf("session %q not found", nameOrID)
 	}
 	return sess.Resize(cols, rows)
 }
@@ -310,14 +329,19 @@ func (m *Manager) List() []SessionInfo {
 	return infos
 }
 
-// AddOutputConsumer registers fn to receive PTY output for sessionID.
+// AddOutputConsumer registers fn to receive PTY output for the selected
+// session. nameOrID may be the session's display name or its UUID.
 // Returns a cancel func that deregisters the consumer when called.
-func (m *Manager) AddOutputConsumer(sessionID string, fn func([]byte)) (cancel func(), err error) {
+func (m *Manager) AddOutputConsumer(nameOrID string, fn func([]byte)) (cancel func(), err error) {
+	sessionID, ok := m.resolveID(nameOrID)
+	if !ok {
+		return nil, fmt.Errorf("session %q not found", nameOrID)
+	}
 	m.mu.RLock()
-	_, ok := m.sessions[sessionID]
+	_, ok = m.sessions[sessionID]
 	m.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("session %s not found", sessionID)
+		return nil, fmt.Errorf("session %q not found", nameOrID)
 	}
 	c := &localConsumer{fn: fn}
 	m.consumersMu.Lock()

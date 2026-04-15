@@ -3,10 +3,10 @@
 // Usage:
 //
 //	ccmux new [--id UUID] [--cols N] [--rows N] [--patterns P] [COMMAND...]
-//	ccmux kill SESSION_ID
+//	ccmux kill NAME|UUID
 //	ccmux list
-//	ccmux attach SESSION_ID
-//	ccmux rename SESSION_ID NAME
+//	ccmux attach NAME|UUID
+//	ccmux rename NAME|UUID NAME
 //
 // It communicates with a running ccmux-agent via its Unix domain socket
 // (default: /tmp/ccmux.sock, override with CCMUX_IPC_SOCKET).
@@ -153,7 +153,7 @@ func runList(socketPath string) {
 
 func runRename(socketPath string, args []string) {
 	if len(args) < 2 {
-		fatalf("usage: ccmux-ctl rename SESSION_ID NAME")
+		fatalf("usage: ccmux rename NAME|UUID NAME")
 	}
 	req := ipc.RenameRequest{Cmd: "rename", SessionID: args[0], Name: args[1]}
 	var resp ipc.Response
@@ -168,7 +168,7 @@ func runRename(socketPath string, args []string) {
 
 func runAttach(socketPath string, args []string) {
 	if len(args) == 0 {
-		fatalf("usage: ccmux-ctl attach SESSION_ID")
+		fatalf("usage: ccmux attach NAME|UUID")
 	}
 	sessionID := args[0]
 
@@ -200,7 +200,7 @@ func runAttach(socketPath string, args []string) {
 	defer term.Restore(fd, oldState)
 
 	// Print detach hint on a new line (raw mode means \n doesn't scroll).
-	fmt.Fprintf(os.Stderr, "\r\n[ccmux] attached to %s — detach with Ctrl-\\ \r\n", sessionID[:8])
+	fmt.Fprintf(os.Stderr, "\r\n[ccmux] attached to %s — detach with Ctrl-\\ \r\n", shortID(sessionID))
 
 	// Handle SIGWINCH: resize the remote PTY when the local terminal resizes.
 	winchCh := make(chan os.Signal, 1)
@@ -295,6 +295,13 @@ func newUUID() (string, error) {
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
+func shortID(id string) string {
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8]
+}
+
 func fatalf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "error: "+format+"\n", args...)
 	os.Exit(1)
@@ -307,11 +314,11 @@ Usage:
   ccmux new [--name NAME] [--cols N] [--rows N] [--patterns P1,P2] [COMMAND...]
   ccmux kill NAME|UUID
   ccmux list
-  ccmux attach SESSION_ID
-  ccmux rename SESSION_ID NAME
+  ccmux attach NAME|UUID
+  ccmux rename NAME|UUID NAME
 
 Flags (new):
-  --name     display name shown in the mobile app and used with kill/attach
+  --name     display name shown in the mobile app and used with kill/attach/rename
              (auto-assigned as 0, 1, 2, … when omitted)
   --cols     terminal width  (auto-detected from current terminal)
   --rows     terminal height (auto-detected from current terminal)

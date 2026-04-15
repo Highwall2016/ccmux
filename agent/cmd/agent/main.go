@@ -158,16 +158,20 @@ func main() {
 		},
 		OnResize: ptyMgr.Resize,
 		OnRename: func(sessionID, name string) error {
+			resolvedID, err := ptyMgr.ResolveID(sessionID)
+			if err != nil {
+				return err
+			}
 			// Notify the backend via a TypeRenameSession packet so it updates the
 			// DB and broadcasts the new name to connected mobile clients.
-			rp := protocol.RenamePayload{SessionID: sessionID, Name: name}
+			rp := protocol.RenamePayload{SessionID: resolvedID, Name: name}
 			payload, err := msgpack.Marshal(&rp)
 			if err != nil {
 				return err
 			}
 			pkt, err := (&protocol.Packet{
 				Type:    protocol.TypeRenameSession,
-				Session: sessionID,
+				Session: resolvedID,
 				Payload: payload,
 			}).Encode()
 			if err != nil {
