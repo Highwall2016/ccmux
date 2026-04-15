@@ -157,6 +157,9 @@ func (a *App) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 		case protocol.TypePing:
 			reply, _ := (&protocol.Packet{Type: protocol.TypePong}).Encode()
 			agentConn.Send(reply)
+			// Refresh last_seen so the mobile app keeps showing the device as
+			// online.  The agent pings every 45s; mobile's isOnline window is 90s.
+			_ = a.DB.TouchDevice(device.ID)
 		}
 	})
 }
