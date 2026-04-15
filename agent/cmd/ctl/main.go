@@ -21,12 +21,15 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"regexp"
 	"strings"
 	"syscall"
 
 	"github.com/ccmux/agent/internal/ipc"
 	"golang.org/x/term"
 )
+
+var reUUID = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -71,6 +74,8 @@ func runSpawn(socketPath string, args []string) {
 		if err != nil {
 			fatalf("generate UUID: %v", err)
 		}
+	} else if !reUUID.MatchString(*id) {
+		fatalf("--id %q is not a valid UUID (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)", *id)
 	}
 
 	// Auto-detect terminal size.
