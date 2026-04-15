@@ -129,5 +129,25 @@ func (a *App) handleKillSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Update the DB immediately so REST clients see the correct status without
+	// waiting for the agent to confirm exit.
+	_ = a.DB.UpdateStatus(sessionID, "killed", nil)
+
+	// Broadcast a TypeSessionStatus "killed" packet so any subscribed WS
+	// clients (e.g. the mobile terminal view) update their UI instantly.
+	sp := protocol.SessionStatusPayload{
+		SessionID: sessionID,
+		Status:    "killed",
+	}
+	if payload, err := msgpack.Marshal(&sp); err == nil {
+		if pkt, err := (&protocol.Packet{
+			Type:    protocol.TypeSessionStatus,
+			Session: sessionID,
+			Payload: payload,
+		}).Encode(); err == nil {
+			a.Hub.Broadcast(sessionID, pkt)
+		}
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:messagepack/messagepack.dart';
 import '../../core/api/api_client.dart';
@@ -56,13 +55,56 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
   Future<void> renameSession(String deviceId, String sessionId, String name) async {
     final api = ref.read(apiClientProvider);
     await api.renameSession(deviceId, sessionId, name);
-    // UI update comes via WS TypeSessionStatus broadcast.
+    // Optimistic update: reflect the new name immediately.
+    // The WS TypeSessionStatus broadcast only reaches subscribed sessions;
+    // the workspace drawer is not subscribed, so we update local state here.
+    _patchSession(deviceId, sessionId, name: name);
   }
 
   Future<void> killSession(String deviceId, String sessionId) async {
     final api = ref.read(apiClientProvider);
     await api.killSession(deviceId, sessionId);
-    // UI update comes via WS TypeSessionStatus "killed" broadcast from agent exit.
+    // Optimistic update: mark as killed immediately so the drawer removes it
+    // from the active list.  The WS broadcast only reaches subscribed clients.
+    _patchSession(deviceId, sessionId, status: 'killed');
+  }
+
+  /// Patches a single session's fields in local state without a full refresh.
+  void _patchSession(
+    String deviceId,
+    String sessionId, {
+    String? status,
+    String? name,
+  }) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    final sessionsForDevice = current.sessionsByDevice[deviceId];
+    if (sessionsForDevice == null) return;
+
+    final idx = sessionsForDevice.indexWhere((s) => s.id == sessionId);
+    if (idx == -1) return;
+
+    final old = sessionsForDevice[idx];
+    final updated = SessionModel(
+      id:           old.id,
+      name:         name   ?? old.name,
+      command:      old.command,
+      status:       status ?? old.status,
+      exitCode:     old.exitCode,
+      startedAt:    old.startedAt,
+      lastActivity: old.lastActivity,
+    );
+
+    final newList = List<SessionModel>.from(sessionsForDevice);
+    newList[idx] = updated;
+
+    state = AsyncValue.data(current.copyWith(
+      sessionsByDevice: {
+        ...current.sessionsByDevice,
+        deviceId: newList,
+      },
+    ));
   }
 
   Future<void> refresh() async {
