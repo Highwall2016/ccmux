@@ -74,6 +74,10 @@ func (a *App) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	agentConn := hub.NewAgentConn(ap.DeviceID, conn, a.Hub)
 	a.Hub.RegisterAgent(ap.DeviceID, agentConn)
 	_ = a.DB.TouchDevice(ap.DeviceID)
+	// Mark any sessions left "active" from a prior agent run as exited.
+	// The agent will immediately re-announce its currently live sessions via
+	// TypeSessionStatus "active", so the DB converges to the true state.
+	_ = a.DB.MarkDeviceSessionsExited(ap.DeviceID)
 
 	// Step 4: pump messages from agent.
 	agentConn.ReadPump(func(data []byte) {

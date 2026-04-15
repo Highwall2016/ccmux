@@ -30,6 +30,10 @@ type ResizeHandler func(sessionID string, cols, rows uint16)
 // KillHandler is called when the backend sends TypeKillSession for a session.
 type KillHandler func(sessionID string)
 
+// ConnectHandler is called once after every successful TypeAuthOK handshake.
+// Use it to re-announce live sessions so the backend can reconcile its state.
+type ConnectHandler func()
+
 // Conn manages the persistent WebSocket connection to the ccmux backend.
 // It reconnects automatically with exponential backoff.
 type Conn struct {
@@ -37,9 +41,10 @@ type Conn struct {
 	deviceID    string
 	deviceToken string
 
-	onInput  InputHandler
-	onResize ResizeHandler
-	onKill   KillHandler
+	onInput   InputHandler
+	onResize  ResizeHandler
+	onKill    KillHandler
+	onConnect ConnectHandler
 
 	sendCh chan []byte
 
@@ -67,6 +72,10 @@ func (c *Conn) SetResizeHandler(h ResizeHandler) { c.onResize = h }
 
 // SetKillHandler replaces the kill handler. Must be called before Run.
 func (c *Conn) SetKillHandler(h KillHandler) { c.onKill = h }
+
+// SetConnectHandler sets the callback fired after every successful auth.
+// Must be called before Run.
+func (c *Conn) SetConnectHandler(h ConnectHandler) { c.onConnect = h }
 
 // Send enqueues a packet for delivery to the backend.
 // Non-blocking: drops the packet if the buffer is full.
@@ -143,6 +152,13 @@ func (c *Conn) connect(ctx context.Context) error {
 	c.mu.Lock()
 	c.ws = ws
 	c.mu.Unlock()
+
+	// Fire the connect callback so the agent can re-announce live sessions.
+	// The backend marks stale "active" sessions as exited on auth, so the
+	// agent must re-announce any sessions it's still running.
+	if c.onConnect != nil {
+		c.onConnect()
+	}
 
 	// Run write pump and read pump concurrently.
 	errCh := make(chan error, 2)

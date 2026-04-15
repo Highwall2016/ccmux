@@ -133,3 +133,16 @@ func (db *DB) ResizeSession(id string, cols, rows int) error {
 	_, err := db.Exec(`UPDATE terminal_sessions SET cols=$1, rows=$2 WHERE id=$3`, cols, rows, id)
 	return err
 }
+
+// MarkDeviceSessionsExited marks all "active" sessions for a device as exited
+// (exit_code = -1).  Called when the device agent (re-)connects so that stale
+// sessions from a previous agent run are cleaned up before the agent
+// re-announces its currently live sessions.
+func (db *DB) MarkDeviceSessionsExited(deviceID string) error {
+	_, err := db.Exec(
+		`UPDATE terminal_sessions SET status='exited', exit_code=-1, ended_at=NOW()
+		 WHERE device_id=$1 AND status='active'`,
+		deviceID,
+	)
+	return err
+}

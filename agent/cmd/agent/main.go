@@ -123,6 +123,15 @@ func main() {
 			log.Printf("[agent] kill session %s: %v", sessionID, err)
 		}
 	})
+	// On every (re-)connect the backend marks all "active" sessions for this
+	// device as exited.  Re-announce every session the PTY manager is still
+	// running so the backend and mobile see the correct live state.
+	wsConn.SetConnectHandler(func() {
+		for _, id := range ptyMgr.List() {
+			announceSession(wsConn, id, "")
+			log.Printf("[agent] re-announced live session %s", id)
+		}
+	})
 
 	// IPC server: Unix socket for local session management.
 	ipcHandler := ipc.Handler{
