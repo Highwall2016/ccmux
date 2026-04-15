@@ -165,14 +165,20 @@ func (m *Manager) Spawn(id, command string, cols, rows uint16) error {
 		if err != nil {
 			log.Printf("[pty] session %s wait error: %v", id, err)
 		}
+		// Remove from map; this is a no-op when Kill() already removed it.
 		m.mu.Lock()
+		_, stillInMap := m.sessions[id]
 		delete(m.sessions, id)
 		m.mu.Unlock()
 		m.extraPatternsMu.Lock()
 		delete(m.extraPatterns, id)
 		m.extraPatternsMu.Unlock()
 		sess.Close()
-		m.onExit(id, exitCode)
+		// Only fire onExit for natural exits.  When Kill() removed the session
+		// first, the backend was already notified "killed" by the REST handler.
+		if stillInMap {
+			m.onExit(id, exitCode)
+		}
 	}()
 
 	return nil
@@ -201,15 +207,23 @@ func (m *Manager) Resize(id string, cols, rows uint16) error {
 }
 
 // Kill terminates a session by closing its PTY and killing the process.
+// The session is removed from the map immediately under the write lock so
+// that `list` and `attach` stop seeing it right away, without waiting for
+// the Wait goroutine (which may block on cmd.Wait with a PTY on macOS).
 func (m *Manager) Kill(id string) error {
-	m.mu.RLock()
+	m.mu.Lock()
 	sess, ok := m.sessions[id]
-	m.mu.RUnlock()
+	if ok {
+		delete(m.sessions, id)
+	}
+	m.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("session %s not found", id)
 	}
+	m.extraPatternsMu.Lock()
+	delete(m.extraPatterns, id)
+	m.extraPatternsMu.Unlock()
 	// Kill the process first (SIGKILL) then close the PTY master.
-	// This ensures the Wait goroutine unblocks promptly.
 	sess.Kill()
 	sess.Close()
 	return nil
