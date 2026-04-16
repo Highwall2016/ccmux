@@ -22,9 +22,12 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/ccmux/agent/internal/auth"
 	"github.com/ccmux/agent/internal/ipc"
@@ -82,6 +85,12 @@ func runAuth(args []string) {
 			fatalf("save credentials: %v", err)
 		}
 		fmt.Printf("Logged in as %s\n", creds.Email)
+		fmt.Print("Starting ccmux-agent... ")
+		if err := startAgent(); err != nil {
+			fmt.Printf("warning: %v\n(start it manually with ccmux-agent)\n", err)
+		} else {
+			fmt.Println("ready.")
+		}
 	case "status":
 		creds, err := auth.LoadCredentials()
 		if err != nil {
@@ -346,6 +355,54 @@ func shortID(id string) string {
 		return id
 	}
 	return id[:8]
+}
+
+func startAgent() error {
+	// If the IPC socket already exists, agent is already running.
+	socketPath := os.Getenv("CCMUX_IPC_SOCKET")
+	if socketPath == "" {
+		socketPath = "/tmp/ccmux.sock"
+	}
+	if _, err := os.Stat(socketPath); err == nil {
+		return nil
+	}
+
+	// Find ccmux-agent next to the current binary.
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find executable path: %w", err)
+	}
+	agentBin := filepath.Join(filepath.Dir(exe), "ccmux-agent")
+	if _, err := os.Stat(agentBin); err != nil {
+		return fmt.Errorf("ccmux-agent not found at %s", agentBin)
+	}
+
+	// Open a log file at ~/.ccmux/agent.log.
+	home, _ := os.UserHomeDir()
+	logPath := filepath.Join(home, ".ccmux", "agent.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		logFile = nil
+	}
+
+	cmd := exec.Command(agentBin)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // detach from terminal
+	if logFile != nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start agent: %w", err)
+	}
+
+	// Wait up to 3 seconds for the IPC socket to appear.
+	for i := 0; i < 30; i++ {
+		time.Sleep(100 * time.Millisecond)
+		if _, err := os.Stat(socketPath); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("agent started (pid %d) but IPC socket not ready yet", cmd.Process.Pid)
 }
 
 func fatalf(format string, args ...any) {
