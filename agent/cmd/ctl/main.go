@@ -2,6 +2,8 @@
 //
 // Usage:
 //
+//	ccmux auth login
+//	ccmux auth status
 //	ccmux new [--id UUID] [--cols N] [--rows N] [--patterns P] [COMMAND...]
 //	ccmux kill NAME|UUID
 //	ccmux list
@@ -24,6 +26,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/ccmux/agent/internal/auth"
 	"github.com/ccmux/agent/internal/ipc"
 	"golang.org/x/term"
 )
@@ -40,20 +43,63 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "auth":
+		runAuth(os.Args[2:])
 	case "new":
+		requireAuth()
 		runSpawn(socketPath, os.Args[2:])
 	case "kill":
+		requireAuth()
 		runKill(socketPath, os.Args[2:])
 	case "list":
+		requireAuth()
 		runList(socketPath)
 	case "attach":
+		requireAuth()
 		runAttach(socketPath, os.Args[2:])
 	case "rename":
+		requireAuth()
 		runRename(socketPath, os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		usage()
 		os.Exit(1)
+	}
+}
+
+func runAuth(args []string) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: ccmux auth <login|status>")
+		os.Exit(1)
+	}
+	switch args[0] {
+	case "login":
+		creds, err := auth.Login()
+		if err != nil {
+			fatalf("login failed: %v", err)
+		}
+		if err := auth.SaveCredentials(creds); err != nil {
+			fatalf("save credentials: %v", err)
+		}
+		fmt.Printf("Logged in as %s\n", creds.Email)
+	case "status":
+		creds, err := auth.LoadCredentials()
+		if err != nil {
+			fmt.Println("Not logged in. Run `ccmux auth login` to authenticate.")
+			os.Exit(1)
+		}
+		fmt.Printf("Logged in as %s\n", creds.Email)
+		fmt.Printf("Server:    %s\n", creds.ServerURL)
+		fmt.Printf("User ID:   %s\n", creds.UserID)
+		fmt.Printf("Device ID: %s\n", creds.DeviceID)
+	default:
+		fatalf("unknown auth command: %s", args[0])
+	}
+}
+
+func requireAuth() {
+	if !auth.IsLoggedIn() {
+		fatalf("not logged in — run `ccmux auth login` first")
 	}
 }
 
@@ -311,6 +357,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `ccmux — control ccmux-agent sessions
 
 Usage:
+  ccmux auth login
+  ccmux auth status
   ccmux new [--name NAME] [--cols N] [--rows N] [--patterns P1,P2] [COMMAND...]
   ccmux kill NAME|UUID
   ccmux list

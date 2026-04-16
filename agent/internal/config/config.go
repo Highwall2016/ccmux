@@ -1,10 +1,13 @@
-// Package config loads agent configuration from environment variables.
+// Package config loads agent configuration from environment variables,
+// falling back to ~/.ccmux/credentials.json when env vars are absent.
 package config
 
 import (
 	"fmt"
 	"os"
 	"os/user"
+
+	"github.com/ccmux/agent/internal/auth"
 )
 
 // Config holds all agent runtime configuration.
@@ -21,24 +24,41 @@ type Config struct {
 	DefaultShell string
 }
 
-// Load reads configuration from environment variables.
+// Load reads configuration from environment variables first, then falls back
+// to ~/.ccmux/credentials.json for any values that are still missing.
 func Load() (*Config, error) {
 	cfg := &Config{
-		ServerURL:   os.Getenv("CCMUX_SERVER_URL"),
-		DeviceID:    os.Getenv("CCMUX_DEVICE_ID"),
-		DeviceToken: os.Getenv("CCMUX_DEVICE_TOKEN"),
-		IPCSocket:   os.Getenv("CCMUX_IPC_SOCKET"),
+		ServerURL:    os.Getenv("CCMUX_SERVER_URL"),
+		DeviceID:     os.Getenv("CCMUX_DEVICE_ID"),
+		DeviceToken:  os.Getenv("CCMUX_DEVICE_TOKEN"),
+		IPCSocket:    os.Getenv("CCMUX_IPC_SOCKET"),
 		DefaultShell: os.Getenv("CCMUX_SHELL"),
 	}
 
+	// Fill missing values from the credentials file.
+	if cfg.ServerURL == "" || cfg.DeviceID == "" || cfg.DeviceToken == "" {
+		creds, err := auth.LoadCredentials()
+		if err == nil {
+			if cfg.ServerURL == "" && creds.ServerURL != "" {
+				cfg.ServerURL = auth.HTTPToWS(creds.ServerURL)
+			}
+			if cfg.DeviceID == "" {
+				cfg.DeviceID = creds.DeviceID
+			}
+			if cfg.DeviceToken == "" {
+				cfg.DeviceToken = creds.DeviceToken
+			}
+		}
+	}
+
 	if cfg.ServerURL == "" {
-		return nil, fmt.Errorf("CCMUX_SERVER_URL is required")
+		return nil, fmt.Errorf("server URL not set — run `ccmux auth login` or set CCMUX_SERVER_URL")
 	}
 	if cfg.DeviceID == "" {
-		return nil, fmt.Errorf("CCMUX_DEVICE_ID is required")
+		return nil, fmt.Errorf("device ID not set — run `ccmux auth login` or set CCMUX_DEVICE_ID")
 	}
 	if cfg.DeviceToken == "" {
-		return nil, fmt.Errorf("CCMUX_DEVICE_TOKEN is required")
+		return nil, fmt.Errorf("device token not set — run `ccmux auth login` or set CCMUX_DEVICE_TOKEN")
 	}
 	if cfg.IPCSocket == "" {
 		cfg.IPCSocket = "/tmp/ccmux.sock"
