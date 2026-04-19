@@ -22,29 +22,23 @@ class DeviceModel {
   final String id;
   final String name;
   final String platform;
-  final String? lastSeen;
+  final bool online;
 
   const DeviceModel({
     required this.id,
     required this.name,
     required this.platform,
-    this.lastSeen,
+    required this.online,
   });
 
   factory DeviceModel.fromJson(Map<String, dynamic> json) => DeviceModel(
         id:       json['id']       as String,
         name:     json['name']     as String,
         platform: json['platform'] as String,
-        lastSeen: json['last_seen'] as String?,
+        online:   (json['online']  as bool?) ?? false,
       );
 
-  /// Returns true if the device connected within the last 90 seconds.
-  bool get isOnline {
-    if (lastSeen == null) return false;
-    final t = DateTime.tryParse(lastSeen!);
-    if (t == null) return false;
-    return DateTime.now().difference(t).inSeconds < 90;
-  }
+  bool get isOnline => online;
 }
 
 class SessionModel {

@@ -1,7 +1,9 @@
 package api
 
 import (
+	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -10,6 +12,89 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/vmihailenco/msgpack/v5"
 )
+
+// handleSpawnSession handles POST /api/devices/{deviceID}/sessions.
+// It forwards a TypeSpawnSession packet to the agent so it spawns a new PTY.
+func (a *App) handleSpawnSession(w http.ResponseWriter, r *http.Request) {
+	userID := mw.UserIDFromCtx(r.Context())
+	deviceID := chi.URLParam(r, "deviceID")
+
+	device, err := a.DB.GetDeviceByID(deviceID)
+	if err != nil || device == nil || device.UserID != userID {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	agentConn := a.Hub.GetAgentConn(deviceID)
+	if agentConn == nil {
+		http.Error(w, "device offline", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		Name          string   `json:"name"`
+		Command       string   `json:"command"`
+		Cols          uint16   `json:"cols"`
+		Rows          uint16   `json:"rows"`
+		AlertPatterns []string `json:"alert_patterns,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if req.Command == "" {
+		req.Command = "bash"
+	}
+	if req.Cols == 0 {
+		req.Cols = 80
+	}
+	if req.Rows == 0 {
+		req.Rows = 24
+	}
+
+	sessionID, err := newSessionID()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	sp := protocol.SpawnSessionPayload{
+		SessionID:     sessionID,
+		Name:          req.Name,
+		Command:       req.Command,
+		Cols:          req.Cols,
+		Rows:          req.Rows,
+		AlertPatterns: req.AlertPatterns,
+	}
+	payload, err := msgpack.Marshal(&sp)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	pkt, err := (&protocol.Packet{
+		Type:    protocol.TypeSpawnSession,
+		Session: sessionID,
+		Payload: payload,
+	}).Encode()
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	agentConn.Send(pkt)
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"session_id": sessionID})
+}
+
+func newSessionID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+}
 
 func (a *App) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	userID := mw.UserIDFromCtx(r.Context())

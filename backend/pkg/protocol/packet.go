@@ -14,6 +14,7 @@ const (
 	TypeAlert          = uint8(0x14)
 	TypeKillSession    = uint8(0x15) // backend → agent: kill the session
 	TypeRenameSession  = uint8(0x16) // agent → backend: rename the session
+	TypeSpawnSession   = uint8(0x17) // backend → agent: spawn a new session
 	TypeAuth           = uint8(0x20)
 	TypeAuthOK         = uint8(0x21)
 	TypeAuthFail       = uint8(0x22)
@@ -55,6 +56,16 @@ type RenamePayload struct {
 type AlertPayload struct {
 	Pattern string `msgpack:"p"`
 	Excerpt []byte `msgpack:"e"`
+}
+
+// SpawnSessionPayload is used with TypeSpawnSession.
+type SpawnSessionPayload struct {
+	SessionID     string   `msgpack:"id"`
+	Name          string   `msgpack:"name,omitempty"`
+	Command       string   `msgpack:"cmd"`
+	Cols          uint16   `msgpack:"cols"`
+	Rows          uint16   `msgpack:"rows"`
+	AlertPatterns []string `msgpack:"patterns,omitempty"`
 }
 
 // SubscribePayload is used with TypeSubscribe.

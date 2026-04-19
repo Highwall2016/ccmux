@@ -54,6 +54,10 @@ class ApiClient {
     return r.data!.map((e) => DeviceModel.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  Future<void> deleteDevice(String deviceId) async {
+    await _dio.delete<void>('/api/devices/$deviceId');
+  }
+
   // Sessions
 
   Future<List<SessionModel>> listSessions(String deviceId) async {

@@ -36,6 +36,10 @@ func (a *App) handleRegisterDevice(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// deviceOnlineThreshold is the window within which a device is considered online.
+// The agent pings every 45 s, so two missed pings means offline.
+const deviceOnlineThreshold = 2 * time.Minute
+
 func (a *App) handleListDevices(w http.ResponseWriter, r *http.Request) {
 	userID := mw.UserIDFromCtx(r.Context())
 	devices, err := a.DB.ListDevicesByUser(userID)
@@ -44,25 +48,23 @@ func (a *App) handleListDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type deviceResp struct {
-		ID        string  `json:"id"`
-		Name      string  `json:"name"`
-		Platform  string  `json:"platform"`
-		LastSeen  *string `json:"last_seen,omitempty"`
-		CreatedAt string  `json:"created_at"`
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Platform string `json:"platform"`
+		Online   bool   `json:"online"`
 	}
 	resp := make([]deviceResp, 0, len(devices))
 	for _, d := range devices {
-		dr := deviceResp{
-			ID:        d.ID,
-			Name:      d.Name,
-			Platform:  d.Platform,
-			CreatedAt: d.CreatedAt.Format(time.RFC3339),
+		online := d.LastSeen != nil && time.Since(*d.LastSeen) < deviceOnlineThreshold
+		if !online {
+			continue // omit offline devices from the response
 		}
-		if d.LastSeen != nil {
-			s := d.LastSeen.Format(time.RFC3339)
-			dr.LastSeen = &s
-		}
-		resp = append(resp, dr)
+		resp = append(resp, deviceResp{
+			ID:       d.ID,
+			Name:     d.Name,
+			Platform: d.Platform,
+			Online:   true,
+		})
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

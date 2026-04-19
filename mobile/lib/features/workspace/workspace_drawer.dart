@@ -59,6 +59,8 @@ class WorkspaceDrawer extends ConsumerWidget {
                               _showRenameDialog(context, ref, device.id, sessionId, currentName),
                           onKillSession: (sessionId) =>
                               _confirmKill(context, ref, device.id, sessionId),
+                          onRemoveDevice: () =>
+                              _confirmRemoveDevice(context, ref, device.id, device.name),
                         );
                       },
                     ),
@@ -104,6 +106,38 @@ class WorkspaceDrawer extends ConsumerWidget {
           .renameSession(deviceId, sessionId, controller.text.trim());
     }
     controller.dispose();
+  }
+
+  Future<void> _confirmRemoveDevice(
+    BuildContext context,
+    WidgetRef ref,
+    String deviceId,
+    String deviceName,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove device?'),
+        content: Text(
+          'Remove "$deviceName" from your account? '
+          'The agent on that device will need to re-login.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await ref.read(workspaceProvider.notifier).removeDevice(deviceId);
+    }
   }
 
   Future<void> _confirmKill(

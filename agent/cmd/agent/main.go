@@ -123,6 +123,17 @@ func main() {
 			log.Printf("[agent] kill session %s: %v", sessionID, err)
 		}
 	})
+	wsConn.SetSpawnHandler(func(sessionID, name, command string, cols, rows uint16, alertPatterns []string) {
+		if err := ptyMgr.Spawn(sessionID, name, command, cols, rows); err != nil {
+			log.Printf("[agent] remote spawn session %s: %v", sessionID, err)
+			return
+		}
+		if len(alertPatterns) > 0 {
+			ptyMgr.SetExtraAlertPatterns(sessionID, alertPatterns)
+		}
+		announceSession(wsConn, sessionID, name, command)
+		log.Printf("[agent] spawned remote session %s (%s) command=%q", sessionID, name, command)
+	})
 	// On every (re-)connect the backend marks all "active" sessions for this
 	// device as exited.  Re-announce every session the PTY manager is still
 	// running so the backend and mobile see the correct live state.

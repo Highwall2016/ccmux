@@ -107,6 +107,20 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
     ));
   }
 
+  Future<void> removeDevice(String deviceId) async {
+    final api = ref.read(apiClientProvider);
+    await api.deleteDevice(deviceId);
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final newDevices = current.devices.where((d) => d.id != deviceId).toList();
+    final newSessions = Map<String, List<SessionModel>>.from(current.sessionsByDevice)
+      ..remove(deviceId);
+    state = AsyncValue.data(current.copyWith(
+      devices: newDevices,
+      sessionsByDevice: newSessions,
+    ));
+  }
+
   Future<void> refresh() async {
     state = const AsyncValue.loading();
     try {

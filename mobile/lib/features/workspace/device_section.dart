@@ -7,6 +7,7 @@ class DeviceSection extends StatelessWidget {
   final void Function(String sessionId, String sessionName) onSessionTap;
   final void Function(String sessionId, String currentName) onRenameSession;
   final void Function(String sessionId) onKillSession;
+  final void Function() onRemoveDevice;
 
   const DeviceSection({
     super.key,
@@ -15,6 +16,7 @@ class DeviceSection extends StatelessWidget {
     required this.onSessionTap,
     required this.onRenameSession,
     required this.onKillSession,
+    required this.onRemoveDevice,
   });
 
   @override
@@ -31,6 +33,25 @@ class DeviceSection extends StatelessWidget {
       title: Text(device.name, style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text(online ? 'online' : 'offline',
           style: TextStyle(color: online ? Colors.green : Colors.grey, fontSize: 12)),
+      trailing: PopupMenuButton<String>(
+        icon: const Icon(Icons.more_vert),
+        tooltip: 'Device options',
+        onSelected: (value) {
+          if (value == 'remove') onRemoveDevice();
+        },
+        itemBuilder: (_) => [
+          const PopupMenuItem(
+            value: 'remove',
+            child: Row(
+              children: [
+                Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                SizedBox(width: 8),
+                Text('Remove device', style: TextStyle(color: Colors.red)),
+              ],
+            ),
+          ),
+        ],
+      ),
       initiallyExpanded: online,
       children: activeSessions.isEmpty
           ? [
