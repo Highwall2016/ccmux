@@ -56,14 +56,11 @@ func (a *App) handleListDevices(w http.ResponseWriter, r *http.Request) {
 	resp := make([]deviceResp, 0, len(devices))
 	for _, d := range devices {
 		online := d.LastSeen != nil && time.Since(*d.LastSeen) < deviceOnlineThreshold
-		if !online {
-			continue // omit offline devices from the response
-		}
 		resp = append(resp, deviceResp{
 			ID:       d.ID,
 			Name:     d.Name,
 			Platform: d.Platform,
-			Online:   true,
+			Online:   online,
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)

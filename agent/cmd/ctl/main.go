@@ -464,11 +464,16 @@ func runDevice(args []string) {
 			return
 		}
 		const (
-			green = "\033[32m"
-			reset = "\033[0m"
+			green  = "\033[32m"
+			yellow = "\033[33m"
+			reset  = "\033[0m"
 		)
 		for _, d := range devices {
-			fmt.Printf("%-36s  [%s]  %-8s  %sonline%s\n", d.Name, shortID(d.ID), d.Platform, green, reset)
+			if d.Online {
+				fmt.Printf("%-36s  [%s]  %-8s  %sonline%s\n", d.Name, shortID(d.ID), d.Platform, green, reset)
+			} else {
+				fmt.Printf("%-36s  [%s]  %-8s  %soffline%s\n", d.Name, shortID(d.ID), d.Platform, yellow, reset)
+			}
 		}
 	case "rm", "remove":
 		if len(args) < 2 {
@@ -507,21 +512,54 @@ type remoteSession struct {
 	Status  string `json:"status"`
 }
 
-func apiGet(creds *auth.Credentials, path string, v any) error {
+// tryRefresh attempts to get a new access token using the stored refresh token.
+// On success it updates creds in-place and persists to disk.
+func tryRefresh(creds *auth.Credentials) error {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, creds.ServerURL+path, nil)
+	body, _ := json.Marshal(map[string]string{"refresh_token": creds.RefreshToken})
+	resp, err := client.Post(creds.ServerURL+"/api/auth/refresh", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+creds.AccessToken)
-	resp, err := client.Do(req)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("refresh failed")
+	}
+	var result struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return err
+	}
+	creds.AccessToken = result.AccessToken
+	return auth.SaveCredentials(creds)
+}
+
+func apiGet(creds *auth.Credentials, path string, v any) error {
+	client := &http.Client{Timeout: 10 * time.Second}
+	doReq := func() (*http.Response, error) {
+		req, err := http.NewRequest(http.MethodGet, creds.ServerURL+path, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+creds.AccessToken)
+		return client.Do(req)
+	}
+	resp, err := doReq()
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("session expired — run `ccmux auth login`")
+		resp.Body.Close()
+		if refreshErr := tryRefresh(creds); refreshErr != nil {
+			return fmt.Errorf("session expired — run `ccmux auth login`")
+		}
+		resp, err = doReq()
+		if err != nil {
+			return fmt.Errorf("request failed: %w", err)
+		}
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("server returned %d", resp.StatusCode)
 	}
@@ -649,7 +687,9 @@ func runRemoteList(socketPath, deviceFlag string, all bool) {
 
 	// Fetch remote devices from backend, skipping the local device.
 	var devices []remoteDevice
-	if err := apiGet(creds, "/api/devices", &devices); err == nil {
+	if apiErr := apiGet(creds, "/api/devices", &devices); apiErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not fetch devices from server: %v\n", apiErr)
+	} else {
 		if !all && deviceFlag != "" {
 			dev, resolveErr := resolveDevice(creds, deviceFlag)
 			if resolveErr != nil {
@@ -657,30 +697,33 @@ func runRemoteList(socketPath, deviceFlag string, all bool) {
 			}
 			devices = []remoteDevice{*dev}
 		}
-		for _, d := range devices {
-			if d.ID == creds.DeviceID {
-				continue // already shown via IPC above
-			}
-			if !d.Online {
-				continue
-			}
-			var sessions []remoteSession
-			if err := apiGet(creds, "/api/devices/"+d.ID+"/sessions", &sessions); err != nil {
-				continue
-			}
-			found = true
+	}
+	for _, d := range devices {
+		if d.ID == creds.DeviceID {
+			continue // already shown via IPC above
+		}
+		found = true
+		if !d.Online {
+			fmt.Printf("device  %-36s  [%s]  %soffline%s\n", d.Name, shortID(d.ID), yellow, reset)
+			continue
+		}
+		var sessions []remoteSession
+		if err := apiGet(creds, "/api/devices/"+d.ID+"/sessions", &sessions); err != nil {
 			fmt.Printf("device  %-36s  [%s]  %sonline%s\n", d.Name, shortID(d.ID), green, reset)
-			if len(sessions) == 0 {
-				fmt.Printf("  %s(no active sessions)%s\n", yellow, reset)
-				continue
+			fmt.Printf("  %s(could not fetch sessions: %v)%s\n", yellow, err, reset)
+			continue
+		}
+		fmt.Printf("device  %-36s  [%s]  %sonline%s\n", d.Name, shortID(d.ID), green, reset)
+		if len(sessions) == 0 {
+			fmt.Printf("  %s(no active sessions)%s\n", yellow, reset)
+			continue
+		}
+		for _, s := range sessions {
+			name := s.Name
+			if name == "" {
+				name = "-"
 			}
-			for _, s := range sessions {
-				name := s.Name
-				if name == "" {
-					name = "-"
-				}
-				fmt.Printf("  %-12s  %s  %-16s  %sactive%s\n", name, shortID(s.ID), s.Command, green, reset)
-			}
+			fmt.Printf("  %-12s  %s  %-16s  %sactive%s\n", name, shortID(s.ID), s.Command, green, reset)
 		}
 	}
 
