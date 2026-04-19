@@ -112,7 +112,23 @@ func doLogin(httpBase, email, password string) (*Credentials, error) {
 		return nil, fmt.Errorf("decode login response: %w", err)
 	}
 
-	// Step 2: register this device
+	// Step 2: reuse existing device credentials if they belong to the same user,
+	// otherwise register a new device. This prevents accumulating orphaned device
+	// records every time the user re-runs `ccmux auth login`.
+	existing, _ := LoadCredentials()
+	if existing != nil && existing.DeviceID != "" && existing.UserID == tokens.UserID && existing.ServerURL == httpBase {
+		return &Credentials{
+			ServerURL:    httpBase,
+			UserID:       tokens.UserID,
+			Email:        email,
+			AccessToken:  tokens.AccessToken,
+			RefreshToken: tokens.RefreshToken,
+			DeviceID:     existing.DeviceID,
+			DeviceToken:  existing.DeviceToken,
+		}, nil
+	}
+
+	// Register a new device.
 	hostname, _ := os.Hostname()
 	devBody, _ := json.Marshal(map[string]string{"name": hostname, "platform": runtime.GOOS})
 	devReq, _ := http.NewRequest(http.MethodPost, httpBase+"/api/devices", bytes.NewReader(devBody))
