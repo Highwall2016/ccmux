@@ -85,25 +85,27 @@ class WorkspaceDrawer extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('New session on $deviceName'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: commandCtrl,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Command'),
-              onSubmitted: (_) => Navigator.pop(ctx, true),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Name (optional)',
-                hintText: 'auto',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: commandCtrl,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Command'),
+                onSubmitted: (_) => Navigator.pop(ctx, true),
               ),
-              onSubmitted: (_) => Navigator.pop(ctx, true),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Name (optional)',
+                  hintText: 'auto',
+                ),
+                onSubmitted: (_) => Navigator.pop(ctx, true),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(

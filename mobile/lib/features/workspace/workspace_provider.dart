@@ -70,15 +70,42 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
   }
 
   /// Spawns a new session on [deviceId]. Returns the new session ID.
-  /// The workspace state updates automatically when the agent announces the
-  /// session via TypeSessionStatus "active" on the WebSocket.
   Future<String> spawnSession(
     String deviceId, {
     String name = '',
     String command = 'bash',
   }) async {
     final api = ref.read(apiClientProvider);
-    return api.spawnSession(deviceId, name: name, command: command);
+    final sessionId = await api.spawnSession(deviceId, name: name, command: command);
+    // Optimistically insert the new session so the WS "active" event finds it
+    // via _patchSession instead of falling through to refresh(), which would
+    // rebuild the drawer while it is animating out and cause a use-after-dispose crash.
+    final now = DateTime.now().toIso8601String();
+    _insertSession(
+      deviceId,
+      SessionModel(
+        id: sessionId,
+        name: name,
+        command: command.isEmpty ? 'bash' : command,
+        status: 'active',
+        startedAt: now,
+        lastActivity: now,
+      ),
+    );
+    return sessionId;
+  }
+
+  void _insertSession(String deviceId, SessionModel session) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final existing = current.sessionsByDevice[deviceId] ?? [];
+    if (existing.any((s) => s.id == session.id)) return;
+    state = AsyncValue.data(current.copyWith(
+      sessionsByDevice: {
+        ...current.sessionsByDevice,
+        deviceId: [...existing, session],
+      },
+    ));
   }
 
   /// Patches a single session's fields in local state without a full refresh.

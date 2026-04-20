@@ -17,19 +17,28 @@ class SpecialKeyToolbar extends ConsumerWidget {
           .sendInput(sessionId!, Uint8List.fromList(bytes));
     }
 
+    Future<void> sendCtrl() async {
+      final char = await _promptKey(context, 'Ctrl+');
+      if (char != null) send([char.codeUnitAt(0) & 0x1F]);
+    }
+
+    Future<void> sendAlt() async {
+      final char = await _promptKey(context, 'Alt+');
+      if (char != null) send([0x1B, char.codeUnitAt(0)]);
+    }
+
     final keys = [
-      _Key('Tab',     () => send([0x09])),
-      _Key('Esc',     () => send([0x1B])),
-      _Key('Ctrl+C',  () => send([0x03])),
-      _Key('Ctrl+D',  () => send([0x04])),
-      _Key('Ctrl+Z',  () => send([0x1A])),
-      _Key('Ctrl+L',  () => send([0x0C])),
-      _Key('↑',     () => send([0x1B, 0x5B, 0x41])),
-      _Key('↓',     () => send([0x1B, 0x5B, 0x42])),
-      _Key('←',     () => send([0x1B, 0x5B, 0x44])),
-      _Key('→',     () => send([0x1B, 0x5B, 0x43])),
-      _Key('PgUp',  () => send([0x1B, 0x5B, 0x35, 0x7E])),
-      _Key('PgDn',  () => send([0x1B, 0x5B, 0x36, 0x7E])),
+      _Key('Tab',    () => send([0x09])),
+      _Key('Esc',    () => send([0x1B])),
+      _Key('Ctrl',   sendCtrl),
+      _Key('Alt',    sendAlt),
+      _Key('Ctrl+C', () => send([0x03])),
+      _Key('↑',      () => send([0x1B, 0x5B, 0x41])),
+      _Key('↓',      () => send([0x1B, 0x5B, 0x42])),
+      _Key('←',      () => send([0x1B, 0x5B, 0x44])),
+      _Key('→',      () => send([0x1B, 0x5B, 0x43])),
+      _Key('PgUp',   () => send([0x1B, 0x5B, 0x35, 0x7E])),
+      _Key('PgDn',   () => send([0x1B, 0x5B, 0x36, 0x7E])),
     ];
 
     return Container(
@@ -54,6 +63,42 @@ class SpecialKeyToolbar extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Shows a single-character prompt. Returns the character, or null if cancelled.
+  Future<String?> _promptKey(BuildContext context, String prefix) async {
+    String? result;
+    final ctrl = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$prefix…'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 1,
+          textCapitalization: TextCapitalization.none,
+          decoration: const InputDecoration(
+            hintText: 'type a key',
+            counterText: '',
+          ),
+          onChanged: (v) {
+            if (v.isNotEmpty) {
+              result = v;
+              Navigator.pop(ctx);
+            }
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    return result;
   }
 }
 
