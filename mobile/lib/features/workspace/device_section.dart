@@ -8,6 +8,7 @@ class DeviceSection extends StatelessWidget {
   final void Function(String sessionId, String currentName) onRenameSession;
   final void Function(String sessionId) onKillSession;
   final void Function() onRemoveDevice;
+  final void Function() onSpawnSession;
 
   const DeviceSection({
     super.key,
@@ -17,6 +18,7 @@ class DeviceSection extends StatelessWidget {
     required this.onRenameSession,
     required this.onKillSession,
     required this.onRemoveDevice,
+    required this.onSpawnSession,
   });
 
   @override
@@ -37,9 +39,21 @@ class DeviceSection extends StatelessWidget {
         icon: const Icon(Icons.more_vert),
         tooltip: 'Device options',
         onSelected: (value) {
+          if (value == 'new') onSpawnSession();
           if (value == 'remove') onRemoveDevice();
         },
         itemBuilder: (_) => [
+          if (online)
+            const PopupMenuItem(
+              value: 'new',
+              child: Row(
+                children: [
+                  Icon(Icons.add, size: 20),
+                  SizedBox(width: 8),
+                  Text('New session'),
+                ],
+              ),
+            ),
           const PopupMenuItem(
             value: 'remove',
             child: Row(

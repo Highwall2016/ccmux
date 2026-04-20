@@ -69,6 +69,18 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
     _patchSession(deviceId, sessionId, status: 'killed');
   }
 
+  /// Spawns a new session on [deviceId]. Returns the new session ID.
+  /// The workspace state updates automatically when the agent announces the
+  /// session via TypeSessionStatus "active" on the WebSocket.
+  Future<String> spawnSession(
+    String deviceId, {
+    String name = '',
+    String command = 'bash',
+  }) async {
+    final api = ref.read(apiClientProvider);
+    return api.spawnSession(deviceId, name: name, command: command);
+  }
+
   /// Patches a single session's fields in local state without a full refresh.
   void _patchSession(
     String deviceId,

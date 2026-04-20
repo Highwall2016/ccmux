@@ -61,6 +61,8 @@ class WorkspaceDrawer extends ConsumerWidget {
                               _confirmKill(context, ref, device.id, sessionId),
                           onRemoveDevice: () =>
                               _confirmRemoveDevice(context, ref, device.id, device.name),
+                          onSpawnSession: () =>
+                              _showSpawnDialog(context, ref, device.id, device.name),
                         );
                       },
                     ),
@@ -69,6 +71,77 @@ class WorkspaceDrawer extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _showSpawnDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String deviceId,
+    String deviceName,
+  ) async {
+    final commandCtrl = TextEditingController(text: 'bash');
+    final nameCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('New session on $deviceName'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: commandCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Command'),
+              onSubmitted: (_) => Navigator.pop(ctx, true),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Name (optional)',
+                hintText: 'auto',
+              ),
+              onSubmitted: (_) => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      commandCtrl.dispose();
+      nameCtrl.dispose();
+      return;
+    }
+    final command = commandCtrl.text.trim().isEmpty ? 'bash' : commandCtrl.text.trim();
+    final name = nameCtrl.text.trim();
+    commandCtrl.dispose();
+    nameCtrl.dispose();
+
+    try {
+      final sessionId = await ref.read(workspaceProvider.notifier)
+          .spawnSession(deviceId, name: name, command: command);
+      // Open terminal immediately and close drawer.
+      if (context.mounted) {
+        ref.read(terminalProvider.notifier).openSession(sessionId, name: name.isNotEmpty ? name : command);
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to create session: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _showRenameDialog(

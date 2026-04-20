@@ -74,6 +74,19 @@ class ApiClient {
     await _dio.delete<void>('/api/devices/$deviceId/sessions/$sessionId');
   }
 
+  /// Spawns a new session on a device. Returns the new session ID.
+  Future<String> spawnSession(
+    String deviceId, {
+    String name = '',
+    String command = 'bash',
+  }) async {
+    final r = await _dio.post<Map<String, dynamic>>(
+      '/api/devices/$deviceId/sessions',
+      data: {'name': name, 'command': command},
+    );
+    return r.data!['session_id'] as String;
+  }
+
   // Push tokens
 
   Future<void> registerPushToken({
