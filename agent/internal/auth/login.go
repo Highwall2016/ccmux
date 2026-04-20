@@ -112,20 +112,39 @@ func doLogin(httpBase, email, password string) (*Credentials, error) {
 		return nil, fmt.Errorf("decode login response: %w", err)
 	}
 
-	// Step 2: reuse existing device credentials if they belong to the same user,
-	// otherwise register a new device. This prevents accumulating orphaned device
-	// records every time the user re-runs `ccmux auth login`.
+	// Step 2: reuse existing device credentials if they belong to the same user
+	// AND the device still exists on the server. This prevents accumulating orphaned
+	// device records every time the user re-runs `ccmux auth login`, while also
+	// handling the case where the device was removed server-side.
 	existing, _ := LoadCredentials()
 	if existing != nil && existing.DeviceID != "" && existing.UserID == tokens.UserID && existing.ServerURL == httpBase {
-		return &Credentials{
-			ServerURL:    httpBase,
-			UserID:       tokens.UserID,
-			Email:        email,
-			AccessToken:  tokens.AccessToken,
-			RefreshToken: tokens.RefreshToken,
-			DeviceID:     existing.DeviceID,
-			DeviceToken:  existing.DeviceToken,
-		}, nil
+		// Verify the device still exists by calling the list endpoint.
+		verifyReq, _ := http.NewRequest(http.MethodGet, httpBase+"/api/devices", nil)
+		verifyReq.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
+		verifyResp, err := client.Do(verifyReq)
+		if err == nil && verifyResp.StatusCode == http.StatusOK {
+			var devList []struct {
+				ID string `json:"id"`
+			}
+			if json.NewDecoder(verifyResp.Body).Decode(&devList) == nil {
+				for _, d := range devList {
+					if d.ID == existing.DeviceID {
+						verifyResp.Body.Close()
+						return &Credentials{
+							ServerURL:    httpBase,
+							UserID:       tokens.UserID,
+							Email:        email,
+							AccessToken:  tokens.AccessToken,
+							RefreshToken: tokens.RefreshToken,
+							DeviceID:     existing.DeviceID,
+							DeviceToken:  existing.DeviceToken,
+						}, nil
+					}
+				}
+			}
+			verifyResp.Body.Close()
+		}
+		// Device not found on server — fall through to register a new one.
 	}
 
 	// Register a new device.
