@@ -282,6 +282,24 @@ func runAttach(socketPath string, args []string) {
 		fatalf("read response: %v", err)
 	}
 	if !resp.OK {
+		// Session not found locally — search remote devices automatically.
+		conn.Close()
+		creds, credsErr := auth.LoadCredentials()
+		if credsErr != nil {
+			fatalf("attach failed: %s", resp.Error)
+		}
+		var devices []remoteDevice
+		if apiErr := apiGet(creds, "/api/devices", &devices); apiErr == nil {
+			for _, d := range devices {
+				if d.ID == creds.DeviceID || !d.Online {
+					continue
+				}
+				if sid, findErr := resolveRemoteSession(creds, d.ID, sessionID); findErr == nil {
+					runRemoteAttach(d.ID, sid)
+					return
+				}
+			}
+		}
 		fatalf("attach failed: %s", resp.Error)
 	}
 

@@ -191,15 +191,20 @@ func main() {
 			wsConn.Send(pkt)
 			return nil
 		},
-		OnAttach: func(sessionID string, conn net.Conn) error {
-			defer conn.Close()
+		OnAttach: func(sessionID string, conn net.Conn, ready chan<- error) {
 			cancel, err := ptyMgr.AddOutputConsumer(sessionID, func(data []byte) {
 				_, _ = conn.Write(data)
 			})
 			if err != nil {
-				return err
+				// Signal failure; do NOT close conn — IPC server owns it on error path.
+				ready <- err
+				return
 			}
+			defer conn.Close()
 			defer cancel()
+			// Session found and streaming started; signal OK so IPC server sends
+			// the success response to the client.
+			ready <- nil
 			buf := make([]byte, 4096)
 			for {
 				n, err := conn.Read(buf)
@@ -207,7 +212,7 @@ func main() {
 					_ = ptyMgr.Write(sessionID, buf[:n])
 				}
 				if err != nil {
-					return nil
+					return
 				}
 			}
 		},

@@ -78,9 +78,11 @@ type Handler struct {
 	OnList   func() []SessionInfo
 	OnResize func(sessionID string, cols, rows uint16) error
 	OnRename func(sessionID, name string) error
-	// OnAttach streams raw PTY I/O over conn after sending the OK response.
-	// It owns conn for its lifetime and must close it when done.
-	OnAttach func(sessionID string, conn net.Conn) error
+	// OnAttach streams raw PTY I/O over conn. It must send nil on ready once the
+	// session is confirmed to exist and output streaming has started, or send an
+	// error to abort. On the error path it must NOT close conn (the IPC server
+	// owns it). On the success path it owns conn and must close it when done.
+	OnAttach func(sessionID string, conn net.Conn, ready chan<- error)
 }
 
 // Serve starts the Unix socket server and blocks until ctx is cancelled.
@@ -231,16 +233,20 @@ func (h *Handler) handle(conn net.Conn) {
 			_ = enc.Encode(Response{Error: "attach not supported"})
 			return
 		}
-		// Send OK then hand off the raw connection.
+		// Start OnAttach in a goroutine; wait for it to signal ready before
+		// sending the OK response. This ensures the client only sees OK if the
+		// session actually exists and streaming has started.
+		readyCh := make(chan error, 1)
+		go h.OnAttach(req.SessionID, conn, readyCh)
+		if err := <-readyCh; err != nil {
+			_ = enc.Encode(Response{Error: err.Error()})
+			// OnAttach did not take ownership of conn on the error path.
+			return
+		}
 		if err := enc.Encode(Response{OK: true}); err != nil {
 			return
 		}
 		ownedByAttach = true
-		go func() {
-			if err := h.OnAttach(req.SessionID, conn); err != nil {
-				log.Printf("[ipc] attach %s: %v", req.SessionID, err)
-			}
-		}()
 		return
 
 	default:
