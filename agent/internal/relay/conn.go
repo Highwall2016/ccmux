@@ -167,6 +167,13 @@ func (c *Conn) connect(ctx context.Context) error {
 		c.onConnect()
 	}
 
+	// Send an immediate ping so the backend records last_seen right away,
+	// making this device show as "online" without waiting for the first ticker.
+	ping, _ := (&protocol.Packet{Type: protocol.TypePing}).Encode()
+	ws.SetWriteDeadline(time.Now().Add(writeWait))
+	_ = ws.WriteMessage(websocket.BinaryMessage, ping)
+	ws.SetWriteDeadline(time.Time{})
+
 	// Run write pump and read pump concurrently.
 	errCh := make(chan error, 2)
 	go c.writePump(ctx, ws, errCh)
