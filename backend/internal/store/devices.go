@@ -26,31 +26,34 @@ type Device struct {
 // replaced (old record deleted, new one inserted) so stale registrations don't
 // accumulate. The new device ID is returned along with the replaced device's ID
 // (empty if none existed).
-func (db *DB) CreateDevice(userID, name, platform, tokenHash string) (deviceID string, replacedID string, err error) {
+func (db *DB) CreateDevice(userID, name, platform, tokenHash string) (deviceID string, err error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return "", "", fmt.Errorf("begin tx: %w", err)
+		return "", fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Find and delete an existing same-name+platform device for this user.
-	_ = tx.QueryRow(
-		`DELETE FROM devices WHERE user_id = $1 AND name = $2 AND platform = $3 RETURNING id`,
+	// Delete any existing devices with the same name+platform for this user so
+	// stale registrations don't accumulate across re-logins.
+	if _, err := tx.Exec(
+		`DELETE FROM devices WHERE user_id = $1 AND name = $2 AND platform = $3`,
 		userID, name, platform,
-	).Scan(&replacedID)
+	); err != nil {
+		return "", fmt.Errorf("delete old device: %w", err)
+	}
 
 	if err := tx.QueryRow(
 		`INSERT INTO devices (user_id, name, platform, device_token)
 		 VALUES ($1, $2, $3, $4) RETURNING id`,
 		userID, name, platform, tokenHash,
 	).Scan(&deviceID); err != nil {
-		return "", "", fmt.Errorf("create device: %w", err)
+		return "", fmt.Errorf("create device: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return "", "", fmt.Errorf("commit: %w", err)
+		return "", fmt.Errorf("commit: %w", err)
 	}
-	return deviceID, replacedID, nil
+	return deviceID, nil
 }
 
 // GetDeviceByID retrieves a device by ID.
