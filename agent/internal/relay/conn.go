@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net"
 	"sync"
 	"time"
 
@@ -120,7 +121,15 @@ func (c *Conn) Run(ctx context.Context) {
 
 // connect establishes one WebSocket session. Returns when the session ends.
 func (c *Conn) connect(ctx context.Context) error {
-	dialer := websocket.DefaultDialer
+	// Use a custom dialer with TCP keepalive so the OS detects dead connections
+	// (e.g. backend restart via Docker) within ~15s instead of waiting for the
+	// application-level pongWait timeout, which Tailscale can delay indefinitely.
+	dialer := &websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+		NetDialContext: (&net.Dialer{
+			KeepAlive: 15 * time.Second,
+		}).DialContext,
+	}
 	ws, _, err := dialer.DialContext(ctx, c.serverURL+"/ws/agent", nil)
 	if err != nil {
 		return err

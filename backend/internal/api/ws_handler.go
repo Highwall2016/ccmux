@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -159,7 +160,11 @@ func (a *App) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 			agentConn.Send(reply)
 			// Refresh last_seen so the mobile app keeps showing the device as
 			// online.  The agent pings every 45s; mobile's isOnline window is 90s.
-			_ = a.DB.TouchDevice(device.ID)
+			if err := a.DB.TouchDevice(device.ID); err != nil {
+				log.Printf("[ws] TouchDevice %s: %v", device.ID, err)
+			} else {
+				log.Printf("[ws] ping from device %s — last_seen updated", device.ID[:8])
+			}
 		}
 	})
 }
