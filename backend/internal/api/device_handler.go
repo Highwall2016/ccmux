@@ -25,7 +25,7 @@ func (a *App) handleRegisterDevice(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	deviceID, err := a.DB.CreateDevice(userID, req.Name, req.Platform, tokenHash)
+	deviceID, _, err := a.DB.CreateDevice(userID, req.Name, req.Platform, tokenHash)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

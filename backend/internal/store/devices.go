@@ -22,17 +22,35 @@ type Device struct {
 }
 
 // CreateDevice inserts a new device. tokenHash is the HMAC-SHA256 of the raw token.
-func (db *DB) CreateDevice(userID, name, platform, tokenHash string) (string, error) {
-	var id string
-	err := db.QueryRow(
+// If a device with the same name and platform already exists for the user, it is
+// replaced (old record deleted, new one inserted) so stale registrations don't
+// accumulate. The new device ID is returned along with the replaced device's ID
+// (empty if none existed).
+func (db *DB) CreateDevice(userID, name, platform, tokenHash string) (deviceID string, replacedID string, err error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return "", "", fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Find and delete an existing same-name+platform device for this user.
+	_ = tx.QueryRow(
+		`DELETE FROM devices WHERE user_id = $1 AND name = $2 AND platform = $3 RETURNING id`,
+		userID, name, platform,
+	).Scan(&replacedID)
+
+	if err := tx.QueryRow(
 		`INSERT INTO devices (user_id, name, platform, device_token)
 		 VALUES ($1, $2, $3, $4) RETURNING id`,
 		userID, name, platform, tokenHash,
-	).Scan(&id)
-	if err != nil {
-		return "", fmt.Errorf("create device: %w", err)
+	).Scan(&deviceID); err != nil {
+		return "", "", fmt.Errorf("create device: %w", err)
 	}
-	return id, nil
+
+	if err := tx.Commit(); err != nil {
+		return "", "", fmt.Errorf("commit: %w", err)
+	}
+	return deviceID, replacedID, nil
 }
 
 // GetDeviceByID retrieves a device by ID.
