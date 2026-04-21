@@ -155,7 +155,7 @@ Environment variables the backend reads:
 |----------|---------|-------------|
 | `DATABASE_URL` | — | Postgres connection string |
 | `REDIS_URL` | — | Redis connection string |
-| `JWT_SECRET` | — | Signs access tokens |
+| `JWT_SECRET` | — | Signs access tokens (openssl rand -hex 32) |
 | `HMAC_SECRET` | — | Signs device tokens |
 | `SERVER_ADDR` | `:8080` | HTTP/WebSocket listen address |
 | `FCM_PROJECT_ID` | — | Firebase project (push notifications, optional) |
