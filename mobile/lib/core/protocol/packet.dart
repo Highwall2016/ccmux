@@ -3,21 +3,21 @@ import 'package:messagepack/messagepack.dart';
 
 // Packet type constants — must exactly match backend/pkg/protocol/packet.go.
 const int typeTerminalOutput = 0x01;
-const int typeTerminalInput  = 0x02;
-const int typeResize         = 0x03;
-const int typeSessionList    = 0x10;
-const int typeSessionStatus  = 0x11;
-const int typeScrollback     = 0x12;
+const int typeTerminalInput = 0x02;
+const int typeResize = 0x03;
+const int typeSessionList = 0x10;
+const int typeSessionStatus = 0x11;
+const int typeScrollback = 0x12;
 const int typeScrollbackDone = 0x13;
-const int typeAlert          = 0x14;
-const int typeAuth           = 0x20;
-const int typeAuthOK         = 0x21;
-const int typeAuthFail       = 0x22;
-const int typeSubscribe      = 0x30;
-const int typeUnsubscribe    = 0x31;
-const int typeTmuxTree       = 0x32; // agent → backend → clients: tmux pane hierarchy
-const int typePing           = 0xFF;
-const int typePong           = 0xFE;
+const int typeAlert = 0x14;
+const int typeAuth = 0x20;
+const int typeAuthOK = 0x21;
+const int typeAuthFail = 0x22;
+const int typeSubscribe = 0x30;
+const int typeUnsubscribe = 0x31;
+const int typeTmuxTree = 0x32; // agent → backend → clients: tmux pane hierarchy
+const int typePing = 0xFF;
+const int typePong = 0xFE;
 
 /// Wire packet matching the Go [Packet] struct with msgpack tags t/s/p.
 class Packet {
@@ -69,9 +69,7 @@ class Packet {
           session = u.unpackString();
         case 'p':
           final binary = u.unpackBinary();
-          if (binary != null) {
-            payload = Uint8List.fromList(binary);
-          }
+          payload = Uint8List.fromList(binary);
         default:
           u.unpackString(); // consume unknown fields
       }

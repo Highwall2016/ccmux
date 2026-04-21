@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:messagepack/messagepack.dart';
 import '../../core/api/api_client.dart';
@@ -13,6 +11,7 @@ class WorkspaceState {
   final Map<String, List<SessionModel>> sessionsByDevice;
   final bool loading;
   final String? error;
+
   /// Latest tmux topology keyed by device ID.  Null when no TypeTmuxTree has
   /// been received yet or tmux is not running on that device.
   final Map<String, TmuxTree> tmuxTreeByDevice;
@@ -33,11 +32,11 @@ class WorkspaceState {
     Map<String, TmuxTree>? tmuxTreeByDevice,
   }) =>
       WorkspaceState(
-        devices:           devices           ?? this.devices,
-        sessionsByDevice:  sessionsByDevice  ?? this.sessionsByDevice,
-        loading:           loading           ?? this.loading,
-        error:             error,
-        tmuxTreeByDevice:  tmuxTreeByDevice  ?? this.tmuxTreeByDevice,
+        devices: devices ?? this.devices,
+        sessionsByDevice: sessionsByDevice ?? this.sessionsByDevice,
+        loading: loading ?? this.loading,
+        error: error,
+        tmuxTreeByDevice: tmuxTreeByDevice ?? this.tmuxTreeByDevice,
       );
 }
 
@@ -46,7 +45,9 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
   Future<WorkspaceState> build() async {
     // Listen for real-time packets from the WS.
     final ws = ref.watch(wsClientProvider);
-    ws.packets.where((p) => p.type == typeSessionStatus).listen(_onSessionStatus);
+    ws.packets
+        .where((p) => p.type == typeSessionStatus)
+        .listen(_onSessionStatus);
     ws.packets.where((p) => p.type == typeTmuxTree).listen(_onTmuxTree);
     return _fetchAll();
   }
@@ -61,7 +62,8 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
     return WorkspaceState(devices: devices, sessionsByDevice: sessMap);
   }
 
-  Future<void> renameSession(String deviceId, String sessionId, String name) async {
+  Future<void> renameSession(
+      String deviceId, String sessionId, String name) async {
     final api = ref.read(apiClientProvider);
     await api.renameSession(deviceId, sessionId, name);
     // Optimistic update: reflect the new name immediately.
@@ -141,15 +143,15 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
 
     final old = sessionsForDevice[idx];
     final updated = SessionModel(
-      id:           old.id,
-      name:         name        ?? old.name,
-      command:      old.command,
-      status:       status      ?? old.status,
-      exitCode:     old.exitCode,
-      startedAt:    old.startedAt,
+      id: old.id,
+      name: name ?? old.name,
+      command: old.command,
+      status: status ?? old.status,
+      exitCode: old.exitCode,
+      startedAt: old.startedAt,
       lastActivity: old.lastActivity,
-      tmuxBacked:   tmuxBacked  ?? old.tmuxBacked,
-      tmuxTarget:   tmuxTarget  ?? old.tmuxTarget,
+      tmuxBacked: tmuxBacked ?? old.tmuxBacked,
+      tmuxTarget: tmuxTarget ?? old.tmuxTarget,
     );
 
     final newList = List<SessionModel>.from(sessionsForDevice);
@@ -183,8 +185,9 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
     final current = state.valueOrNull;
     if (current == null) return;
     final newDevices = current.devices.where((d) => d.id != deviceId).toList();
-    final newSessions = Map<String, List<SessionModel>>.from(current.sessionsByDevice)
-      ..remove(deviceId);
+    final newSessions =
+        Map<String, List<SessionModel>>.from(current.sessionsByDevice)
+          ..remove(deviceId);
     state = AsyncValue.data(current.copyWith(
       devices: newDevices,
       sessionsByDevice: newSessions,
@@ -210,14 +213,21 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
       for (int i = 0; i < mapLen; i++) {
         final k = u.unpackString()!;
         switch (k) {
-          case 'id':           id          = u.unpackString();
-          case 'status':       status      = u.unpackString();
-          case 'name':         name        = u.unpackString();
-          case 'tmux_target':  tmuxTarget  = u.unpackString();
-          case 'tmux_backed':  tmuxBacked  = u.unpackBool() ?? false;
+          case 'id':
+            id = u.unpackString();
+          case 'status':
+            status = u.unpackString();
+          case 'name':
+            name = u.unpackString();
+          case 'tmux_target':
+            tmuxTarget = u.unpackString();
+          case 'tmux_backed':
+            tmuxBacked = u.unpackBool() ?? false;
           // Consume known non-string fields so the unpacker stays in sync.
-          case 'exit_code':    u.unpackInt();
-          default:             u.unpackString(); // cmd is a string
+          case 'exit_code':
+            u.unpackInt();
+          default:
+            u.unpackString(); // cmd is a string
         }
       }
     } catch (_) {
@@ -229,7 +239,8 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
     if (current == null) return;
 
     // Try to find the session in the existing map.
-    final updated = Map<String, List<SessionModel>>.from(current.sessionsByDevice);
+    final updated =
+        Map<String, List<SessionModel>>.from(current.sessionsByDevice);
     bool found = false;
     for (final entry in updated.entries) {
       final idx = entry.value.indexWhere((s) => s.id == id);
@@ -238,15 +249,17 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
         final old = entry.value[idx];
         final newList = List<SessionModel>.from(entry.value);
         newList[idx] = SessionModel(
-          id:           old.id,
-          name:         name        ?? old.name,
-          command:      old.command,
-          status:       status,
-          exitCode:     old.exitCode,
-          startedAt:    old.startedAt,
+          id: old.id,
+          name: name ?? old.name,
+          command: old.command,
+          status: status,
+          exitCode: old.exitCode,
+          startedAt: old.startedAt,
           lastActivity: old.lastActivity,
-          tmuxBacked:   tmuxBacked  || old.tmuxBacked,
-          tmuxTarget:   (tmuxTarget != null && tmuxTarget.isNotEmpty) ? tmuxTarget : old.tmuxTarget,
+          tmuxBacked: tmuxBacked || old.tmuxBacked,
+          tmuxTarget: (tmuxTarget != null && tmuxTarget.isNotEmpty)
+              ? tmuxTarget
+              : old.tmuxTarget,
         );
         updated[entry.key] = newList;
         break;
@@ -332,7 +345,8 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
                       u.unpackString();
                     }
                   }
-                  windows.add(TmuxWindowNode(index: winIndex, name: winName, panes: panes));
+                  windows.add(TmuxWindowNode(
+                      index: winIndex, name: winName, panes: panes));
                 }
               } else {
                 u.unpackString();
@@ -362,7 +376,8 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
 }
 
 final workspaceProvider =
-    AsyncNotifierProvider<WorkspaceNotifier, WorkspaceState>(() => WorkspaceNotifier());
+    AsyncNotifierProvider<WorkspaceNotifier, WorkspaceState>(
+        () => WorkspaceNotifier());
 
 /// Tracks which device is shown in the session list. Null = first device.
 final selectedDeviceIdProvider = StateProvider<String?>((ref) => null);

@@ -36,7 +36,8 @@ class _SessionAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = CcmuxColors.forName(session.name.isNotEmpty ? session.name : session.command);
+    final color = CcmuxColors.forName(
+        session.name.isNotEmpty ? session.name : session.command);
     final initials = _initials(session.name, session.command);
     final dotColor = CcmuxColors.statusDot(session.status, session.exitCode);
 
@@ -115,7 +116,10 @@ class _ResourceWidgetState extends State<_ResourceWidget> {
   void didUpdateWidget(_ResourceWidget old) {
     super.didUpdateWidget(old);
     if (widget.active && _timer == null) _startTimer();
-    if (!widget.active) { _timer?.cancel(); _timer = null; }
+    if (!widget.active) {
+      _timer?.cancel();
+      _timer = null;
+    }
   }
 
   void _startTimer() {
@@ -144,38 +148,43 @@ class _ResourceWidgetState extends State<_ResourceWidget> {
   Widget build(BuildContext context) {
     final cpuColor = _cpu > 80
         ? CcmuxColors.red
-        : _cpu > 50 ? CcmuxColors.yellow : CcmuxColors.accent;
+        : _cpu > 50
+            ? CcmuxColors.yellow
+            : CcmuxColors.accent;
     final memColor = (_mem / _memTotalMb) > 0.8
         ? CcmuxColors.red
-        : (_mem / _memTotalMb) > 0.6 ? CcmuxColors.yellow : CcmuxColors.blue;
+        : (_mem / _memTotalMb) > 0.6
+            ? CcmuxColors.yellow
+            : CcmuxColors.blue;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         _chip('CPU', '${_cpu.round()}%', cpuColor),
         const SizedBox(width: 4),
-        _chip('MEM', '${_fmtMem(_mem)}/${_fmtMem(_memTotalMb.toDouble())}', memColor),
+        _chip('MEM', '${_fmtMem(_mem)}/${_fmtMem(_memTotalMb.toDouble())}',
+            memColor),
       ],
     );
   }
 
   Widget _chip(String label, String value, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-    decoration: BoxDecoration(
-      color: Colors.white.withOpacity(0.05),
-      borderRadius: BorderRadius.circular(5),
-    ),
-    child: Text(
-      '$label $value',
-      style: TextStyle(
-        fontFamily: 'monospace',
-        fontSize: 9,
-        fontWeight: FontWeight.w600,
-        color: color,
-        letterSpacing: 0.2,
-      ),
-    ),
-  );
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Text(
+          '$label $value',
+          style: TextStyle(
+            fontFamily: 'monospace',
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+            color: color,
+            letterSpacing: 0.2,
+          ),
+        ),
+      );
 }
 
 // ── Session Row ─────────────────────────────────────────────────────────────
@@ -203,9 +212,10 @@ class _SessionRow extends ConsumerWidget {
     final isEnded = !session.isActive;
 
     // Ended sessions: swipe removes from list. Active: swipe kills the process.
-    final swipeColor  = isEnded ? const Color(0xFF3A3A3F) : CcmuxColors.red;
-    final swipeIcon   = isEnded ? Icons.remove_circle_outline : Icons.delete_outline;
-    final swipeLabel  = isEnded ? 'Remove' : 'Kill';
+    final swipeColor = isEnded ? const Color(0xFF3A3A3F) : CcmuxColors.red;
+    final swipeIcon =
+        isEnded ? Icons.remove_circle_outline : Icons.delete_outline;
+    final swipeLabel = isEnded ? 'Remove' : 'Kill';
 
     return Dismissible(
       key: Key(session.id),
@@ -220,16 +230,21 @@ class _SessionRow extends ConsumerWidget {
             Icon(swipeIcon, color: Colors.white, size: 20),
             const SizedBox(height: 2),
             Text(swipeLabel,
-                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700)),
           ],
         ),
       ),
       confirmDismiss: (_) async {
-        if (isEnded) return true; // no confirmation needed for already-dead sessions
+        if (isEnded)
+          return true; // no confirmation needed for already-dead sessions
         return await showDialog<bool>(
-          context: context,
-          builder: (ctx) => _ConfirmKillDialog(name: session.name),
-        ) ?? false;
+              context: context,
+              builder: (ctx) => _ConfirmKillDialog(name: session.name),
+            ) ??
+            false;
       },
       onDismissed: (_) => onKill(),
       child: GestureDetector(
@@ -253,12 +268,17 @@ class _SessionRow extends ConsumerWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            session.name.isNotEmpty ? session.name : session.command,
+                            session.name.isNotEmpty
+                                ? session.name
+                                : session.command,
                             style: TextStyle(
                               fontFamily: 'monospace',
                               fontSize: 14,
-                              fontWeight: hasNew ? FontWeight.w700 : FontWeight.w500,
-                              color: hasNew ? CcmuxColors.text : CcmuxColors.textMuted,
+                              fontWeight:
+                                  hasNew ? FontWeight.w700 : FontWeight.w500,
+                              color: hasNew
+                                  ? CcmuxColors.text
+                                  : CcmuxColors.textMuted,
                               letterSpacing: -0.3,
                             ),
                             overflow: TextOverflow.ellipsis,
@@ -267,7 +287,8 @@ class _SessionRow extends ConsumerWidget {
                         const SizedBox(width: 6),
                         Text(
                           _relTime(session.lastActivity),
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF3D3D42)),
+                          style: const TextStyle(
+                              fontSize: 11, color: Color(0xFF3D3D42)),
                         ),
                         if (hasNew) ...[
                           const SizedBox(width: 6),
@@ -275,7 +296,9 @@ class _SessionRow extends ConsumerWidget {
                             width: 8,
                             height: 8,
                             decoration: BoxDecoration(
-                              color: isError ? CcmuxColors.red : CcmuxColors.accent,
+                              color: isError
+                                  ? CcmuxColors.red
+                                  : CcmuxColors.accent,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -288,7 +311,9 @@ class _SessionRow extends ConsumerWidget {
                       style: TextStyle(
                         fontFamily: 'monospace',
                         fontSize: 12,
-                        color: hasNew ? CcmuxColors.textSub : CcmuxColors.textFaint,
+                        color: hasNew
+                            ? CcmuxColors.textSub
+                            : CcmuxColors.textFaint,
                         fontWeight: hasNew ? FontWeight.w500 : FontWeight.w400,
                         letterSpacing: -0.2,
                       ),
@@ -333,7 +358,8 @@ class _ContextSheet extends StatelessWidget {
   final VoidCallback onRename;
   final VoidCallback onKill;
 
-  const _ContextSheet({required this.session, required this.onRename, required this.onKill});
+  const _ContextSheet(
+      {required this.session, required this.onRename, required this.onKill});
 
   @override
   Widget build(BuildContext context) {
@@ -345,7 +371,8 @@ class _ContextSheet extends StatelessWidget {
         children: [
           Center(
             child: Container(
-              width: 36, height: 4,
+              width: 36,
+              height: 4,
               decoration: BoxDecoration(
                 color: const Color(0xFF333333),
                 borderRadius: BorderRadius.circular(2),
@@ -377,10 +404,14 @@ class _ContextSheet extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           if (session.isActive)
-            _sheetAction(context, icon: Icons.edit_outlined, label: 'Rename', onTap: onRename),
+            _sheetAction(context,
+                icon: Icons.edit_outlined, label: 'Rename', onTap: onRename),
           if (session.isActive) const SizedBox(height: 6),
-          _sheetAction(context,
-            icon: session.isActive ? Icons.stop_circle_outlined : Icons.remove_circle_outline,
+          _sheetAction(
+            context,
+            icon: session.isActive
+                ? Icons.stop_circle_outlined
+                : Icons.remove_circle_outline,
             label: session.isActive ? 'Kill session' : 'Remove',
             color: session.isActive ? CcmuxColors.red : CcmuxColors.textDim,
             onTap: onKill,
@@ -401,7 +432,8 @@ class _ContextSheet extends StatelessWidget {
     );
   }
 
-  Widget _sheetAction(BuildContext context, {
+  Widget _sheetAction(
+    BuildContext context, {
     required IconData icon,
     required String label,
     Color? color,
@@ -413,17 +445,23 @@ class _ContextSheet extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
         decoration: BoxDecoration(
-          color: color != null ? color.withOpacity(0.08) : Colors.white.withOpacity(0.04),
+          color: color != null
+              ? color.withOpacity(0.08)
+              : Colors.white.withOpacity(0.04),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: color != null ? color.withOpacity(0.2) : Colors.white.withOpacity(0.07),
+            color: color != null
+                ? color.withOpacity(0.2)
+                : Colors.white.withOpacity(0.07),
           ),
         ),
         child: Row(
           children: [
             Icon(icon, color: c, size: 18),
             const SizedBox(width: 14),
-            Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: c)),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w500, color: c)),
           ],
         ),
       ),
@@ -442,18 +480,21 @@ class _ConfirmKillDialog extends StatelessWidget {
     return AlertDialog(
       backgroundColor: CcmuxColors.surface,
       title: Text('Kill "$name"?',
-          style: const TextStyle(color: CcmuxColors.text, fontWeight: FontWeight.w700)),
+          style: const TextStyle(
+              color: CcmuxColors.text, fontWeight: FontWeight.w700)),
       content: const Text('This will terminate the process immediately.',
           style: TextStyle(color: CcmuxColors.textSub)),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel', style: TextStyle(color: CcmuxColors.textMuted)),
+          child: const Text('Cancel',
+              style: TextStyle(color: CcmuxColors.textMuted)),
         ),
         TextButton(
           style: TextButton.styleFrom(foregroundColor: CcmuxColors.red),
           onPressed: () => Navigator.pop(context, true),
-          child: const Text('Kill', style: TextStyle(fontWeight: FontWeight.w700)),
+          child:
+              const Text('Kill', style: TextStyle(fontWeight: FontWeight.w700)),
         ),
       ],
     );
@@ -480,7 +521,8 @@ class _DeviceSwitcherSheet extends ConsumerWidget {
         children: [
           Center(
             child: Container(
-              width: 36, height: 4,
+              width: 36,
+              height: 4,
               decoration: BoxDecoration(
                 color: const Color(0xFF333333),
                 borderRadius: BorderRadius.circular(2),
@@ -490,15 +532,17 @@ class _DeviceSwitcherSheet extends ConsumerWidget {
           const SizedBox(height: 20),
           const Text('Switch Device',
               style: TextStyle(
-                fontSize: 16, fontWeight: FontWeight.w700,
-                color: CcmuxColors.text, letterSpacing: -0.3,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: CcmuxColors.text,
+                letterSpacing: -0.3,
               )),
           const SizedBox(height: 16),
           ...devices.map((dev) {
             final devSessions = ws.sessionsByDevice[dev.id] ?? [];
             final activeCount = devSessions.where((s) => s.isActive).length;
             final firstId = devices.isNotEmpty ? devices.first.id : null;
-          final isCurrent = (selectedId ?? firstId) == dev.id;
+            final isCurrent = (selectedId ?? firstId) == dev.id;
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 6),
@@ -508,7 +552,8 @@ class _DeviceSwitcherSheet extends ConsumerWidget {
                   Navigator.pop(context);
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
                     color: isCurrent
                         ? CcmuxColors.accent.withOpacity(0.09)
@@ -531,8 +576,12 @@ class _DeviceSwitcherSheet extends ConsumerWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
-                          dev.platform == 'macos' ? Icons.laptop_mac : Icons.dns_outlined,
-                          color: isCurrent ? CcmuxColors.accent : const Color(0xFF666666),
+                          dev.platform == 'macos'
+                              ? Icons.laptop_mac
+                              : Icons.dns_outlined,
+                          color: isCurrent
+                              ? CcmuxColors.accent
+                              : const Color(0xFF666666),
                           size: 18,
                         ),
                       ),
@@ -545,7 +594,9 @@ class _DeviceSwitcherSheet extends ConsumerWidget {
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
-                                  color: isCurrent ? CcmuxColors.text : CcmuxColors.textSub,
+                                  color: isCurrent
+                                      ? CcmuxColors.text
+                                      : CcmuxColors.textSub,
                                   letterSpacing: -0.2,
                                 )),
                             const SizedBox(height: 2),
@@ -566,7 +617,9 @@ class _DeviceSwitcherSheet extends ConsumerWidget {
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: dev.online ? CcmuxColors.accent : const Color(0xFF444444),
+                          color: dev.online
+                              ? CcmuxColors.accent
+                              : const Color(0xFF444444),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -583,7 +636,8 @@ class _DeviceSwitcherSheet extends ConsumerWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text('Cancel',
-                    style: const TextStyle(fontSize: 13, color: CcmuxColors.textDim)),
+                    style: const TextStyle(
+                        fontSize: 13, color: CcmuxColors.textDim)),
               ),
             ),
           ),
@@ -607,7 +661,8 @@ class _SettingsSheet extends ConsumerWidget {
         children: [
           Center(
             child: Container(
-              width: 36, height: 4,
+              width: 36,
+              height: 4,
               decoration: BoxDecoration(
                 color: const Color(0xFF333333),
                 borderRadius: BorderRadius.circular(2),
@@ -619,8 +674,10 @@ class _SettingsSheet extends ConsumerWidget {
             alignment: Alignment.centerLeft,
             child: Text('Settings',
                 style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w700,
-                  color: CcmuxColors.text, letterSpacing: -0.3,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: CcmuxColors.text,
+                  letterSpacing: -0.3,
                 )),
           ),
           const SizedBox(height: 16),
@@ -670,7 +727,8 @@ class _SettingsSheet extends ConsumerWidget {
                       color: CcmuxColors.red.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.logout, color: CcmuxColors.red, size: 18),
+                    child: const Icon(Icons.logout,
+                        color: CcmuxColors.red, size: 18),
                   ),
                   const SizedBox(width: 14),
                   const Text('Sign Out',
@@ -689,7 +747,9 @@ class _SettingsSheet extends ConsumerWidget {
             child: Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Text('Close', style: const TextStyle(fontSize: 13, color: CcmuxColors.textDim)),
+                child: Text('Close',
+                    style: const TextStyle(
+                        fontSize: 13, color: CcmuxColors.textDim)),
               ),
             ),
           ),
@@ -727,7 +787,8 @@ class _SettingsSheet extends ConsumerWidget {
               color: Colors.white.withOpacity(0.06),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: highlight ?? CcmuxColors.textSub, size: 18),
+            child:
+                Icon(icon, color: highlight ?? CcmuxColors.textSub, size: 18),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -784,14 +845,15 @@ class _SectionLabel extends StatelessWidget {
 // ── Sheet helpers ─────────────────────────────────────────────────────────────
 
 Widget _sheetHandle() => Center(
-  child: Container(
-    width: 36, height: 4,
-    decoration: BoxDecoration(
-      color: const Color(0xFF333333),
-      borderRadius: BorderRadius.circular(2),
-    ),
-  ),
-);
+      child: Container(
+        width: 36,
+        height: 4,
+        decoration: BoxDecoration(
+          color: const Color(0xFF333333),
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    );
 
 Widget _sheetInput({
   required TextEditingController controller,
@@ -807,22 +869,28 @@ Widget _sheetInput({
     padding: const EdgeInsets.symmetric(horizontal: 12),
     child: Row(
       children: [
-        const Text('\$', style: TextStyle(
-          fontFamily: 'monospace', fontSize: 13, color: CcmuxColors.accent,
-        )),
+        const Text('\$',
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 13,
+              color: CcmuxColors.accent,
+            )),
         const SizedBox(width: 8),
         Expanded(
           child: TextField(
             controller: controller,
             autofocus: autofocus,
             style: const TextStyle(
-              fontFamily: 'monospace', fontSize: 14,
-              color: CcmuxColors.text, letterSpacing: -0.3,
+              fontFamily: 'monospace',
+              fontSize: 14,
+              color: CcmuxColors.text,
+              letterSpacing: -0.3,
             ),
             decoration: InputDecoration(
               border: InputBorder.none,
               hintText: hint,
-              hintStyle: const TextStyle(color: CcmuxColors.textDim, fontFamily: 'monospace'),
+              hintStyle: const TextStyle(
+                  color: CcmuxColors.textDim, fontFamily: 'monospace'),
               contentPadding: const EdgeInsets.symmetric(vertical: 12),
             ),
           ),
@@ -850,7 +918,10 @@ Row _sheetButtons({
           ),
           alignment: Alignment.center,
           child: Text(cancel,
-              style: const TextStyle(color: CcmuxColors.textMuted, fontSize: 14, fontWeight: FontWeight.w500)),
+              style: const TextStyle(
+                  color: CcmuxColors.textMuted,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500)),
         ),
       ),
     ),
@@ -866,7 +937,10 @@ Row _sheetButtons({
           ),
           alignment: Alignment.center,
           child: Text(confirm,
-              style: const TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.w700)),
+              style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700)),
         ),
       ),
     ),
@@ -887,7 +961,7 @@ class _SpawnSheet extends StatefulWidget {
 
 class _SpawnSheetState extends State<_SpawnSheet> {
   final _commandCtrl = TextEditingController(text: 'bash');
-  final _nameCtrl    = TextEditingController();
+  final _nameCtrl = TextEditingController();
   late bool _useTmux;
   bool _tmuxSplit = false;
 
@@ -908,7 +982,10 @@ class _SpawnSheetState extends State<_SpawnSheet> {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
-        20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 36,
+        20,
+        20,
+        20,
+        MediaQuery.of(context).viewInsets.bottom + 36,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -918,11 +995,14 @@ class _SpawnSheetState extends State<_SpawnSheet> {
           const SizedBox(height: 20),
           Text('New session on ${widget.device.name}',
               style: const TextStyle(
-                fontSize: 16, fontWeight: FontWeight.w700,
-                color: CcmuxColors.text, letterSpacing: -0.3,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: CcmuxColors.text,
+                letterSpacing: -0.3,
               )),
           const SizedBox(height: 20),
-          _sheetInput(controller: _commandCtrl, hint: 'Command', autofocus: true),
+          _sheetInput(
+              controller: _commandCtrl, hint: 'Command', autofocus: true),
           const SizedBox(height: 12),
           _sheetInput(
             controller: _nameCtrl,
@@ -930,8 +1010,16 @@ class _SpawnSheetState extends State<_SpawnSheet> {
           ),
           if (widget.hasTmux) ...[
             const SizedBox(height: 8),
-            _toggleRow('Use tmux', _useTmux, (v) => setState(() { _useTmux = v; if (!v) _tmuxSplit = false; })),
-            if (_useTmux) _toggleRow('Split pane', _tmuxSplit, (v) => setState(() => _tmuxSplit = v)),
+            _toggleRow(
+                'Use tmux',
+                _useTmux,
+                (v) => setState(() {
+                      _useTmux = v;
+                      if (!v) _tmuxSplit = false;
+                    })),
+            if (_useTmux)
+              _toggleRow('Split pane', _tmuxSplit,
+                  (v) => setState(() => _tmuxSplit = v)),
           ],
           const SizedBox(height: 20),
           _sheetButtons(
@@ -939,7 +1027,9 @@ class _SpawnSheetState extends State<_SpawnSheet> {
             confirm: 'Create',
             onCancel: () => Navigator.pop(context),
             onConfirm: () => Navigator.pop(context, (
-              command: _commandCtrl.text.trim().isEmpty ? 'bash' : _commandCtrl.text.trim(),
+              command: _commandCtrl.text.trim().isEmpty
+                  ? 'bash'
+                  : _commandCtrl.text.trim(),
               name: _nameCtrl.text.trim(),
               useTmux: _useTmux,
               tmuxSplit: _tmuxSplit,
@@ -957,8 +1047,12 @@ Widget _toggleRow(String label, bool value, ValueChanged<bool> onChanged) {
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(fontSize: 13, color: CcmuxColors.textSub)),
-        Switch(value: value, onChanged: onChanged, activeColor: CcmuxColors.accent),
+        Text(label,
+            style: const TextStyle(fontSize: 13, color: CcmuxColors.textSub)),
+        Switch(
+            value: value,
+            onChanged: onChanged,
+            activeThumbColor: CcmuxColors.accent),
       ],
     ),
   );
@@ -970,7 +1064,8 @@ Future<void> _showSpawnSheet(
   DeviceModel device,
   WorkspaceState ws,
 ) async {
-  final result = await showModalBottomSheet<({String command, String name, bool useTmux, bool tmuxSplit})>(
+  final result = await showModalBottomSheet<
+      ({String command, String name, bool useTmux, bool tmuxSplit})>(
     context: context,
     isScrollControlled: true,
     backgroundColor: CcmuxColors.surface,
@@ -987,18 +1082,18 @@ Future<void> _showSpawnSheet(
 
   try {
     final sessionId = await ref.read(workspaceProvider.notifier).spawnSession(
-      device.id,
-      name: result.name,
-      command: result.command,
-      useTmux: result.useTmux,
-      tmuxSplit: result.tmuxSplit,
-    );
+          device.id,
+          name: result.name,
+          command: result.command,
+          useTmux: result.useTmux,
+          tmuxSplit: result.tmuxSplit,
+        );
     if (context.mounted) {
       ref.read(terminalProvider.notifier).openSession(
-        sessionId,
-        name: result.name.isNotEmpty ? result.name : result.command,
-        tmuxBacked: result.useTmux,
-      );
+            sessionId,
+            name: result.name.isNotEmpty ? result.name : result.command,
+            tmuxBacked: result.useTmux,
+          );
       context.go('/terminal');
     }
   } catch (e) {
@@ -1039,7 +1134,10 @@ class _RenameSheetState extends State<_RenameSheet> {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
-        20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 36,
+        20,
+        20,
+        20,
+        MediaQuery.of(context).viewInsets.bottom + 36,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1049,13 +1147,17 @@ class _RenameSheetState extends State<_RenameSheet> {
           const SizedBox(height: 20),
           const Text('Rename Session',
               style: TextStyle(
-                fontSize: 16, fontWeight: FontWeight.w700,
-                color: CcmuxColors.text, letterSpacing: -0.3,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: CcmuxColors.text,
+                letterSpacing: -0.3,
               )),
           const SizedBox(height: 6),
           Text(widget.session.command,
               style: const TextStyle(
-                fontFamily: 'monospace', fontSize: 12, color: CcmuxColors.textDim,
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: CcmuxColors.textDim,
               )),
           const SizedBox(height: 18),
           _sheetInput(controller: _ctrl, hint: 'Session name', autofocus: true),
@@ -1092,7 +1194,8 @@ Future<void> _showRenameSheet(
   );
 
   if (newName != null && context.mounted) {
-    await ref.read(workspaceProvider.notifier)
+    await ref
+        .read(workspaceProvider.notifier)
         .renameSession(device.id, session.id, newName);
   }
 }
@@ -1109,7 +1212,8 @@ class SessionListPage extends ConsumerWidget {
     return workspaceAsync.when(
       loading: () => const Scaffold(
         backgroundColor: CcmuxColors.bg,
-        body: Center(child: CircularProgressIndicator(color: CcmuxColors.accent)),
+        body:
+            Center(child: CircularProgressIndicator(color: CcmuxColors.accent)),
       ),
       error: (e, _) => Scaffold(
         backgroundColor: CcmuxColors.bg,
@@ -1119,11 +1223,14 @@ class SessionListPage extends ConsumerWidget {
             children: [
               const Icon(Icons.error_outline, color: CcmuxColors.red, size: 48),
               const SizedBox(height: 12),
-              Text('$e', style: const TextStyle(color: CcmuxColors.textSub, fontSize: 13)),
+              Text('$e',
+                  style: const TextStyle(
+                      color: CcmuxColors.textSub, fontSize: 13)),
               const SizedBox(height: 16),
               TextButton(
                 onPressed: () => ref.invalidate(workspaceProvider),
-                child: const Text('Retry', style: TextStyle(color: CcmuxColors.accent)),
+                child: const Text('Retry',
+                    style: TextStyle(color: CcmuxColors.accent)),
               ),
             ],
           ),
@@ -1154,15 +1261,16 @@ class _SessionListContent extends ConsumerWidget {
         backgroundColor: CcmuxColors.bg,
         body: Center(
           child: Text('No devices registered',
-              style: TextStyle(color: CcmuxColors.textDim, fontFamily: 'monospace')),
+              style: TextStyle(
+                  color: CcmuxColors.textDim, fontFamily: 'monospace')),
         ),
       );
     }
 
     final sessions = ws.sessionsByDevice[device.id] ?? [];
-    final active   = sessions.where((s) => s.isActive).toList()
+    final active = sessions.where((s) => s.isActive).toList()
       ..sort((a, b) => b.lastActivity.compareTo(a.lastActivity));
-    final ended    = sessions.where((s) => !s.isActive).toList()
+    final ended = sessions.where((s) => !s.isActive).toList()
       ..sort((a, b) => b.lastActivity.compareTo(a.lastActivity));
 
     return Scaffold(
@@ -1214,18 +1322,22 @@ class _SessionListContent extends ConsumerWidget {
       device: device,
       onTap: () {
         ref.read(terminalProvider.notifier).openSession(
-          session.id,
-          name: session.name.isNotEmpty ? session.name : session.command,
-          tmuxBacked: session.tmuxBacked,
-        );
+              session.id,
+              name: session.name.isNotEmpty ? session.name : session.command,
+              tmuxBacked: session.tmuxBacked,
+            );
         context.go('/terminal');
       },
       onKill: () {
         if (session.isActive) {
-          ref.read(workspaceProvider.notifier).killSession(device.id, session.id);
+          ref
+              .read(workspaceProvider.notifier)
+              .killSession(device.id, session.id);
         } else {
           // Session already ended — remove it from local state without an API call.
-          ref.read(workspaceProvider.notifier).removeEndedSession(device.id, session.id);
+          ref
+              .read(workspaceProvider.notifier)
+              .removeEndedSession(device.id, session.id);
         }
       },
       onRename: () => _showRenameSheet(context, ref, device, session),
@@ -1240,13 +1352,15 @@ class _Header extends ConsumerWidget {
   final List<SessionModel> sessions;
   final WorkspaceState ws;
 
-  const _Header({required this.device, required this.sessions, required this.ws});
+  const _Header(
+      {required this.device, required this.sessions, required this.ws});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activeCount = sessions.where((s) => s.isActive).length;
-    final termState   = ref.watch(terminalProvider).valueOrNull;
-    final hasNew      = sessions.any((s) => termState?.sessions[s.id]?.hasNewOutput ?? false);
+    final termState = ref.watch(terminalProvider).valueOrNull;
+    final hasNew =
+        sessions.any((s) => termState?.sessions[s.id]?.hasNewOutput ?? false);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 14),
@@ -1274,7 +1388,8 @@ class _Header extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: Colors.white.withOpacity(0.08)),
               ),
-              child: const Icon(Icons.settings_outlined, color: Color(0xFF777777), size: 17),
+              child: const Icon(Icons.settings_outlined,
+                  color: Color(0xFF777777), size: 17),
             ),
           ),
 
@@ -1283,13 +1398,15 @@ class _Header extends ConsumerWidget {
             child: GestureDetector(
               onTap: ws.devices.length > 1
                   ? () => showModalBottomSheet(
-                      context: context,
-                      backgroundColor: CcmuxColors.surface,
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                      ),
-                      builder: (_) => _DeviceSwitcherSheet(devices: ws.devices, ws: ws),
-                    )
+                        context: context,
+                        backgroundColor: CcmuxColors.surface,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.vertical(top: Radius.circular(24)),
+                        ),
+                        builder: (_) =>
+                            _DeviceSwitcherSheet(devices: ws.devices, ws: ws),
+                      )
                   : null,
               child: Column(
                 children: [
@@ -1298,7 +1415,9 @@ class _Header extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        device.platform == 'macos' ? Icons.laptop_mac : Icons.dns_outlined,
+                        device.platform == 'macos'
+                            ? Icons.laptop_mac
+                            : Icons.dns_outlined,
                         color: CcmuxColors.accent,
                         size: 14,
                       ),
