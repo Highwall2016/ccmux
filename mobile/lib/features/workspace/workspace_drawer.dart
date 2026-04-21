@@ -4,6 +4,7 @@ import '../auth/auth_provider.dart';
 import '../terminal/terminal_provider.dart';
 import 'workspace_provider.dart';
 import 'device_section.dart';
+import 'tmux_hierarchy_section.dart';
 
 class WorkspaceDrawer extends ConsumerWidget {
   const WorkspaceDrawer({super.key});
@@ -47,14 +48,40 @@ class WorkspaceDrawer extends ConsumerWidget {
                       itemBuilder: (context, i) {
                         final device = ws.devices[i];
                         final sessions = ws.sessionsByDevice[device.id] ?? [];
+                        final tmuxTree = ws.tmuxTreeByDevice[device.id];
+
+                        void openSession(String sessionId, String sessionName) {
+                          final isTmuxBacked = sessions.any((s) => s.id == sessionId && s.tmuxBacked);
+                          ref.read(terminalProvider.notifier).openSession(
+                            sessionId,
+                            name: sessionName,
+                            tmuxBacked: isTmuxBacked,
+                          );
+                          Navigator.of(context).pop();
+                        }
+
+                        // Use tmux hierarchy widget when tree is available.
+                        if (tmuxTree != null && tmuxTree.sessions.isNotEmpty) {
+                          return TmuxHierarchySection(
+                            device: device,
+                            tmuxTree: tmuxTree,
+                            bareSessions: sessions.where((s) => s.isActive && !s.tmuxBacked).toList(),
+                            onSessionTap: openSession,
+                            onRenameSession: (sessionId, currentName) =>
+                                _showRenameDialog(context, ref, device.id, sessionId, currentName),
+                            onKillSession: (sessionId) =>
+                                _confirmKill(context, ref, device.id, sessionId),
+                            onRemoveDevice: () =>
+                                _confirmRemoveDevice(context, ref, device.id, device.name),
+                            onSpawnSession: () =>
+                                _showSpawnDialog(context, ref, device.id, device.name),
+                          );
+                        }
+
                         return DeviceSection(
                           device: device,
                           sessions: sessions,
-                          onSessionTap: (sessionId, sessionName) {
-                            ref.read(terminalProvider.notifier)
-                                .openSession(sessionId, name: sessionName);
-                            Navigator.of(context).pop(); // close drawer
-                          },
+                          onSessionTap: openSession,
                           onRenameSession: (sessionId, currentName) =>
                               _showRenameDialog(context, ref, device.id, sessionId, currentName),
                           onKillSession: (sessionId) =>
@@ -81,42 +108,72 @@ class WorkspaceDrawer extends ConsumerWidget {
   ) async {
     final commandCtrl = TextEditingController(text: 'bash');
     final nameCtrl = TextEditingController();
+    bool useTmux = false;
+    bool tmuxSplit = false;
+
+    // Check whether this device has tmux available (via tmux tree).
+    final ws = ref.read(workspaceProvider).valueOrNull;
+    final hasTmux = ws?.tmuxTreeByDevice.containsKey(deviceId) ?? false;
+
+    // Default to tmux when the device is known to be running tmux.
+    useTmux = hasTmux;
+
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('New session on $deviceName'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: commandCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(labelText: 'Command'),
-                onSubmitted: (_) => Navigator.pop(ctx, true),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Name (optional)',
-                  hintText: 'auto',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: Text('New session on $deviceName'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: commandCtrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'Command'),
+                  onSubmitted: (_) => Navigator.pop(ctx, true),
                 ),
-                onSubmitted: (_) => Navigator.pop(ctx, true),
-              ),
-            ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: InputDecoration(
+                    labelText: useTmux ? 'tmux session name' : 'Name (optional)',
+                    hintText: 'auto',
+                  ),
+                  onSubmitted: (_) => Navigator.pop(ctx, true),
+                ),
+                if (hasTmux) ...[
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Use tmux'),
+                    subtitle: const Text('New tmux session (default)'),
+                    value: useTmux,
+                    onChanged: (v) => setState(() { useTmux = v; if (!v) tmuxSplit = false; }),
+                  ),
+                  if (useTmux)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Split pane'),
+                      subtitle: const Text('Split current pane instead of new session'),
+                      value: tmuxSplit,
+                      onChanged: (v) => setState(() => tmuxSplit = v),
+                    ),
+                ],
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Create'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Create'),
-          ),
-        ],
       ),
     );
     if (confirmed != true) {
@@ -126,15 +183,26 @@ class WorkspaceDrawer extends ConsumerWidget {
     }
     final command = commandCtrl.text.trim().isEmpty ? 'bash' : commandCtrl.text.trim();
     final name = nameCtrl.text.trim();
+    final capturedUseTmux = useTmux;
+    final capturedTmuxSplit = tmuxSplit;
     commandCtrl.dispose();
     nameCtrl.dispose();
 
     try {
-      final sessionId = await ref.read(workspaceProvider.notifier)
-          .spawnSession(deviceId, name: name, command: command);
+      final sessionId = await ref.read(workspaceProvider.notifier).spawnSession(
+        deviceId,
+        name: name,
+        command: command,
+        useTmux: capturedUseTmux,
+        tmuxSplit: capturedTmuxSplit,
+      );
       // Open terminal immediately and close drawer.
       if (context.mounted) {
-        ref.read(terminalProvider.notifier).openSession(sessionId, name: name.isNotEmpty ? name : command);
+        ref.read(terminalProvider.notifier).openSession(
+          sessionId,
+          name: name.isNotEmpty ? name : command,
+          tmuxBacked: capturedUseTmux,
+        );
         Navigator.of(context).pop();
       }
     } catch (e) {

@@ -92,6 +92,11 @@ func (a *App) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 			a.Hub.Broadcast(pkt.Session, data)
 			_ = a.DB.TouchSession(pkt.Session)
 
+		case protocol.TypeTmuxTree:
+			// Forward the tmux topology packet to all mobile clients subscribed
+			// to any session on this device.
+			a.Hub.BroadcastToDevice(device.ID, data)
+
 		case protocol.TypeSessionStatus:
 			var sp protocol.SessionStatusPayload
 			if err := msgpack.Unmarshal(pkt.Payload, &sp); err != nil {
@@ -102,8 +107,14 @@ func (a *App) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 				// session.  UpsertSession creates the record if new; ReactivateSession
 				// flips it back to active if MarkDeviceSessionsExited cleared it on
 				// the previous disconnect.
-				_ = a.DB.UpsertSession(sp.SessionID, device.ID, sp.Command, sp.Name, 0, 0)
+				_ = a.DB.UpsertSession(sp.SessionID, device.ID, sp.Command, sp.Name, 0, 0, sp.TmuxBacked, sp.TmuxTarget)
 				_ = a.DB.ReactivateSession(sp.SessionID)
+				// Only forward the "active" announcement if the DB agrees — prevents
+				// DiscoverAndRegister from resurrecting a session the user killed.
+				sess, err := a.DB.GetSessionByID(sp.SessionID)
+				if err != nil || sess == nil || sess.Status != "active" {
+					return
+				}
 			} else {
 				_ = a.DB.UpdateStatus(sp.SessionID, sp.Status, sp.ExitCode)
 				// Push notification on session exit.
@@ -229,7 +240,7 @@ func (a *App) handleClientWS(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Subscribe to live stream first (to not miss output during replay).
-			a.Hub.Subscribe(sp.SessionID, clientConn)
+			a.Hub.Subscribe(sp.SessionID, session.DeviceID, clientConn)
 			subscribed = append(subscribed, sp.SessionID)
 			go func(sid, offset string) {
 				_ = a.Hub.ReplayScrollback(r.Context(), sid, offset, clientConn)
@@ -273,6 +284,7 @@ func (a *App) handleClientWS(w http.ResponseWriter, r *http.Request) {
 	for _, sid := range subscribed {
 		a.Hub.Unsubscribe(sid, clientConn)
 	}
+	a.Hub.CleanupConn(clientConn)
 }
 
 func wsSendAuthFail(conn *websocket.Conn, msg string) {

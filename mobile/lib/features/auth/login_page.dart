@@ -47,6 +47,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Image.asset('assets/app_icon.png', width: 96, height: 96),
+              const SizedBox(height: 16),
               const Text('ccmux',
                   style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center),

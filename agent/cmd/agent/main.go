@@ -17,6 +17,7 @@ import (
 	"github.com/ccmux/agent/internal/ipc"
 	agentpty "github.com/ccmux/agent/internal/pty"
 	"github.com/ccmux/agent/internal/relay"
+	agenttmux "github.com/ccmux/agent/internal/tmux"
 	"github.com/ccmux/backend/pkg/protocol"
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -119,11 +120,47 @@ func main() {
 		}
 	})
 	wsConn.SetKillHandler(func(sessionID string) {
+		// For tmux-backed sessions, kill the actual tmux pane/session first.
+		// Without this, the tmux session keeps running and DiscoverAndRegister
+		// will re-announce it as active moments later.
+		if target := ptyMgr.TmuxTargetOf(sessionID); target != "" {
+			if err := agenttmux.KillPane(target); err != nil {
+				log.Printf("[agent] kill tmux pane %s for session %s: %v", target, sessionID, err)
+			}
+		}
 		if err := ptyMgr.Kill(sessionID); err != nil {
 			log.Printf("[agent] kill session %s: %v", sessionID, err)
 		}
 	})
-	wsConn.SetSpawnHandler(func(sessionID, name, command string, cols, rows uint16, alertPatterns []string) {
+	wsConn.SetSpawnHandler(func(sessionID, name, command string, cols, rows uint16, alertPatterns []string, useTmux, tmuxSplit bool) {
+		// Default to a new tmux session when tmux is available.
+		// useTmux=false only skips tmux when the caller explicitly requested a
+		// bare PTY (future: use a TmuxBare flag); for now any running tmux server
+		// is preferred so that every ccmux session is a real tmux session.
+		if !useTmux {
+			useTmux = agenttmux.IsRunning()
+		}
+		if useTmux && agenttmux.IsRunning() {
+			var target string
+			var tmuxErr error
+			if tmuxSplit {
+				target, tmuxErr = agenttmux.SplitWindow("", command)
+			} else {
+				target, tmuxErr = agenttmux.NewSession(name, command)
+			}
+			if tmuxErr != nil {
+				log.Printf("[agent] tmux new-session for %s: %v", sessionID, tmuxErr)
+				// Fall through to bare PTY.
+			} else {
+				if err := ptyMgr.SpawnTmux(sessionID, name, target, cols, rows); err != nil {
+					log.Printf("[agent] spawn tmux session %s: %v", sessionID, err)
+					return
+				}
+				announceTmuxSession(wsConn, sessionID, name, command, target)
+				log.Printf("[agent] spawned tmux session %s (%s) target=%s", sessionID, name, target)
+				return
+			}
+		}
 		if err := ptyMgr.Spawn(sessionID, name, command, cols, rows); err != nil {
 			log.Printf("[agent] remote spawn session %s: %v", sessionID, err)
 			return
@@ -132,7 +169,7 @@ func main() {
 			ptyMgr.SetExtraAlertPatterns(sessionID, alertPatterns)
 		}
 		announceSession(wsConn, sessionID, name, command)
-		log.Printf("[agent] spawned remote session %s (%s) command=%q", sessionID, name, command)
+		log.Printf("[agent] spawned bare session %s (%s) command=%q", sessionID, name, command)
 	})
 	// On every (re-)connect the backend marks all "active" sessions for this
 	// device as exited.  Re-announce every session the PTY manager is still
@@ -158,14 +195,35 @@ func main() {
 			announceSession(wsConn, sessionID, name, command)
 			return nil
 		},
+		OnSpawnTmux: func(sessionID, name, tmuxTarget string, cols, rows uint16) error {
+			if err := ptyMgr.SpawnTmux(sessionID, name, tmuxTarget, cols, rows); err != nil {
+				return err
+			}
+			announceTmuxSession(wsConn, sessionID, name, "", tmuxTarget)
+			return nil
+		},
 		OnKill: ptyMgr.Kill,
 		OnList: func() []ipc.SessionInfo {
 			infos := ptyMgr.List()
 			out := make([]ipc.SessionInfo, len(infos))
 			for i, si := range infos {
-				out[i] = ipc.SessionInfo{ID: si.ID, Name: si.Name}
+				target := ptyMgr.TmuxTargetOf(si.ID)
+				out[i] = ipc.SessionInfo{
+					ID:         si.ID,
+					Name:       si.Name,
+					TmuxBacked: target != "",
+					TmuxTarget: target,
+				}
 			}
 			return out
+		},
+		OnInfo: func(sessionID string) (bool, string, error) {
+			id, err := ptyMgr.ResolveID(sessionID)
+			if err != nil {
+				return false, "", err
+			}
+			target := ptyMgr.TmuxTargetOf(id)
+			return target != "", target, nil
 		},
 		OnResize: ptyMgr.Resize,
 		OnRename: func(sessionID, name string) error {
@@ -229,6 +287,18 @@ func main() {
 		}
 	}()
 
+	// Start tmux auto-discovery if tmux is available.
+	// This runs in a background goroutine; the agent works fine without tmux.
+	agenttmux.DiscoverAndRegister(
+		cfg.DeviceID,
+		ptyMgr,
+		wsConn,
+		cfg.TmuxWatchInterval,
+		func(sessionID, name string, tmuxBacked bool, tmuxTarget string) {
+			announceTmuxSession(wsConn, sessionID, name, "", tmuxTarget)
+		},
+	)
+
 	log.Printf("[agent] starting — device=%s server=%s ipc=%s", cfg.DeviceID, cfg.ServerURL, cfg.IPCSocket)
 
 	// Run WebSocket relay (blocks, reconnects automatically until ctx is cancelled).
@@ -256,6 +326,32 @@ func announceSession(conn *relay.Conn, sessionID, name, command string) {
 		Status:    "active",
 		Name:      name,
 		Command:   command,
+	}
+	payload, err := msgpack.Marshal(&sp)
+	if err != nil {
+		return
+	}
+	pkt, err := (&protocol.Packet{
+		Type:    protocol.TypeSessionStatus,
+		Session: sessionID,
+		Payload: payload,
+	}).Encode()
+	if err != nil {
+		return
+	}
+	conn.Send(pkt)
+}
+
+// announceTmuxSession is like announceSession but includes tmux metadata so
+// the backend stores tmux_backed=true and the mobile app shows the correct UI.
+func announceTmuxSession(conn *relay.Conn, sessionID, name, command, tmuxTarget string) {
+	sp := protocol.SessionStatusPayload{
+		SessionID:  sessionID,
+		Status:     "active",
+		Name:       name,
+		Command:    command,
+		TmuxBacked: true,
+		TmuxTarget: tmuxTarget,
 	}
 	payload, err := msgpack.Marshal(&sp)
 	if err != nil {

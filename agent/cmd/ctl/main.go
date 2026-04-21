@@ -100,6 +100,13 @@ func runAuth(args []string) {
 			fmt.Printf("warning: %v\n(start it manually with ccmux-agent)\n", err)
 		} else {
 			fmt.Println("ready.")
+			// Give the agent a moment to complete tmux discovery before we list.
+			time.Sleep(600 * time.Millisecond)
+			sock := os.Getenv("CCMUX_IPC_SOCKET")
+			if sock == "" {
+				sock = "/tmp/ccmux.sock"
+			}
+			showTmuxTakeover(sock)
 		}
 	case "status":
 		creds, err := auth.LoadCredentials()
@@ -122,13 +129,47 @@ func requireAuth() {
 	}
 }
 
+// showTmuxTakeover lists which tmux sessions the agent discovered on startup.
+func showTmuxTakeover(socketPath string) {
+	req := ipc.ListRequest{Cmd: "list"}
+	var resp ipc.Response
+	if err := send(socketPath, req, &resp); err != nil || !resp.OK {
+		return
+	}
+	var tmuxSessions []ipc.SessionInfo
+	for _, s := range resp.Sessions {
+		if s.TmuxBacked {
+			tmuxSessions = append(tmuxSessions, s)
+		}
+	}
+	if len(tmuxSessions) == 0 {
+		fmt.Println("No running tmux sessions detected. Use `ccmux new` to start one.")
+		return
+	}
+	noun := "session"
+	if len(tmuxSessions) != 1 {
+		noun = "sessions"
+	}
+	fmt.Printf("Took over %d tmux %s:\n", len(tmuxSessions), noun)
+	for _, s := range tmuxSessions {
+		if s.TmuxTarget != "" {
+			fmt.Printf("  • %-20s  %s\n", s.Name, s.TmuxTarget)
+		} else {
+			fmt.Printf("  • %s\n", s.Name)
+		}
+	}
+}
+
 func runSpawn(socketPath string, args []string) {
 	fs := flag.NewFlagSet("new", flag.ExitOnError)
-	name := fs.String("name", "", "human-readable display name for the session")
-	cols := fs.Uint("cols", 0, "terminal width (auto-detected if 0)")
-	rows := fs.Uint("rows", 0, "terminal height (auto-detected if 0)")
-	patterns := fs.String("patterns", "", "comma-separated extra alert patterns (e.g. \"esc to cancel,do you want\")")
+	name     := fs.String("name", "", "session name (becomes the tmux session name)")
+	cols     := fs.Uint("cols", 0, "terminal width (auto-detected if 0)")
+	rows     := fs.Uint("rows", 0, "terminal height (auto-detected if 0)")
+	patterns := fs.String("patterns", "", "comma-separated extra alert patterns")
 	deviceFlag := fs.String("device", "", "remote device name or ID to spawn on")
+	windowFlag := fs.Bool("window", false, "add a new window to the existing tmux session instead of a new session")
+	splitFlag  := fs.Bool("split",  false, "split the current tmux pane")
+	bareFlag   := fs.Bool("bare",   false, "skip tmux and start a bare PTY session")
 	_ = fs.Parse(args)
 
 	if *deviceFlag != "" {
@@ -143,21 +184,21 @@ func runSpawn(socketPath string, args []string) {
 
 	// Auto-detect terminal size.
 	if *cols == 0 || *rows == 0 {
-		w, h, err := term.GetSize(int(os.Stdout.Fd()))
-		if err != nil {
+		w, h, sizeErr := term.GetSize(int(os.Stdout.Fd()))
+		if sizeErr != nil {
 			w, h = 80, 24
 		}
-		if *cols == 0 {
-			*cols = uint(w)
-		}
-		if *rows == 0 {
-			*rows = uint(h)
-		}
+		if *cols == 0 { *cols = uint(w) }
+		if *rows == 0 { *rows = uint(h) }
 	}
 
 	command := strings.Join(fs.Args(), " ")
 	if command == "" {
-		command = "bash"
+		if sh := os.Getenv("SHELL"); sh != "" {
+			command = sh
+		} else {
+			command = "bash"
+		}
 	}
 
 	var alertPatterns []string
@@ -169,6 +210,42 @@ func runSpawn(socketPath string, args []string) {
 		}
 	}
 
+	// Use tmux by default when a server is running, unless --bare was requested.
+	useTmux := !*bareFlag && isTmuxRunning()
+	if useTmux {
+		var target string
+		var tmuxErr error
+		switch {
+		case *splitFlag:
+			target, tmuxErr = spawnTmuxSplit(command)
+		case *windowFlag:
+			target, tmuxErr = spawnTmuxWindow(*name, command)
+		default:
+			target, tmuxErr = spawnTmuxSession(*name, command)
+		}
+		if tmuxErr != nil {
+			fatalf("%v", tmuxErr)
+		}
+		req := ipc.SpawnTmuxRequest{
+			Cmd:        "spawn_tmux",
+			SessionID:  sessionID,
+			Name:       *name,
+			TmuxTarget: target,
+			Cols:       uint16(*cols),
+			Rows:       uint16(*rows),
+		}
+		var resp ipc.Response
+		if err := send(socketPath, req, &resp); err != nil {
+			fatalf("ipc: %v", err)
+		}
+		if !resp.OK {
+			fatalf("spawn failed: %s", resp.Error)
+		}
+		fmt.Println(sessionID)
+		return
+	}
+
+	// Bare PTY path (--bare or tmux not installed).
 	req := ipc.SpawnRequest{
 		Cmd:           "spawn",
 		SessionID:     sessionID,
@@ -178,7 +255,6 @@ func runSpawn(socketPath string, args []string) {
 		Rows:          uint16(*rows),
 		AlertPatterns: alertPatterns,
 	}
-
 	var resp ipc.Response
 	if err := send(socketPath, req, &resp); err != nil {
 		fatalf("ipc: %v", err)
@@ -187,6 +263,68 @@ func runSpawn(socketPath string, args []string) {
 		fatalf("spawn failed: %s", resp.Error)
 	}
 	fmt.Println(sessionID)
+}
+
+// isTmuxRunning returns true when a tmux server is reachable.
+func isTmuxRunning() bool {
+	return exec.Command("tmux", "list-sessions").Run() == nil
+}
+
+// spawnTmuxSession creates a new detached tmux session and returns its target.
+// sessionName may be empty; tmux will auto-assign a name in that case.
+func spawnTmuxSession(sessionName, command string) (string, error) {
+	args := []string{"new-session", "-d",
+		"-P", "-F", "#{session_name}:#{window_index}.#{pane_index}"}
+	if sessionName != "" {
+		args = append(args, "-s", sessionName)
+	}
+	if command != "" {
+		args = append(args, command)
+	}
+	out, err := exec.Command("tmux", args...).Output()
+	if err != nil {
+		return "", fmt.Errorf("tmux new-session: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// spawnTmuxWindow creates a new detached tmux window and returns its target.
+func spawnTmuxWindow(windowName, command string) (string, error) {
+	args := []string{"new-window", "-P", "-d", "-F",
+		"#{session_name}:#{window_index}.0"}
+	if windowName != "" {
+		args = append(args, "-n", windowName)
+	}
+	if command != "" {
+		args = append(args, command)
+	}
+	out, err := exec.Command("tmux", args...).Output()
+	if err != nil {
+		return "", fmt.Errorf("tmux new-window: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// tmuxBin returns the path to the tmux binary, falling back to "tmux".
+func tmuxBin() string {
+	if p, err := exec.LookPath("tmux"); err == nil {
+		return p
+	}
+	return "tmux"
+}
+
+// spawnTmuxSplit creates a new tmux split-pane and returns its target.
+func spawnTmuxSplit(command string) (string, error) {
+	args := []string{"split-window", "-P", "-F",
+		"#{session_name}:#{window_index}.#{pane_index}"}
+	if command != "" {
+		args = append(args, command)
+	}
+	out, err := exec.Command("tmux", args...).Output()
+	if err != nil {
+		return "", fmt.Errorf("tmux split-window: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func runKill(socketPath string, args []string) {
@@ -254,16 +392,46 @@ func runRename(socketPath string, args []string) {
 func runAttach(socketPath string, args []string) {
 	fs := flag.NewFlagSet("attach", flag.ExitOnError)
 	deviceFlag := fs.String("device", "", "remote device name or ID")
+	noTmux := fs.Bool("no-tmux", false, "skip tmux fallback and use ccmux PTY attach")
 	_ = fs.Parse(args)
 
 	if fs.NArg() == 0 {
-		fatalf("usage: ccmux attach [--device NAME|ID] NAME|UUID")
+		fatalf("usage: ccmux attach [--device NAME|ID] [--no-tmux] NAME|UUID")
 	}
 	sessionID := fs.Args()[0]
 
 	if *deviceFlag != "" {
 		runRemoteAttach(*deviceFlag, sessionID)
 		return
+	}
+
+	// Feature 8: if the session is tmux-backed, fall through to `tmux attach-session`
+	// so the user gets the full native tmux experience when sitting at their computer.
+	if !*noTmux {
+		var infoResp ipc.Response
+		infoReq := ipc.InfoRequest{Cmd: "info", SessionID: sessionID}
+		if err := send(socketPath, infoReq, &infoResp); err == nil && infoResp.OK && infoResp.TmuxBacked && infoResp.TmuxTarget != "" {
+			target := infoResp.TmuxTarget
+			// If already inside tmux, switch to the target client instead of attaching.
+			if os.Getenv("TMUX") != "" {
+				if err := syscall.Exec(
+					tmuxBin(),
+					[]string{"tmux", "switch-client", "-t", target},
+					os.Environ(),
+				); err != nil {
+					fatalf("tmux switch-client: %v", err)
+				}
+			} else {
+				if err := syscall.Exec(
+					tmuxBin(),
+					[]string{"tmux", "attach-session", "-t", target},
+					os.Environ(),
+				); err != nil {
+					fatalf("tmux attach-session: %v", err)
+				}
+			}
+			return // unreachable (exec replaces process)
+		}
 	}
 
 	conn, err := net.Dial("unix", socketPath)
@@ -415,12 +583,14 @@ func shortID(id string) string {
 }
 
 func startAgent() error {
-	// If the IPC socket already exists, agent is already running.
 	socketPath := os.Getenv("CCMUX_IPC_SOCKET")
 	if socketPath == "" {
 		socketPath = "/tmp/ccmux.sock"
 	}
-	if _, err := os.Stat(socketPath); err == nil {
+	// Probe the socket to confirm the agent is actually responding, not just
+	// that a stale socket file was left behind after a previous shutdown.
+	if c, err := net.Dial("unix", socketPath); err == nil {
+		c.Close()
 		return nil
 	}
 
@@ -957,36 +1127,43 @@ func fatalf(format string, args ...any) {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, `ccmux — control ccmux-agent sessions
+	fmt.Fprintln(os.Stderr, `ccmux — control tmux sessions from your phone
 
 Usage:
-  ccmux auth login
-  ccmux auth status
-  ccmux new [--name NAME] [--cols N] [--rows N] [--patterns P1,P2] [--device D] [COMMAND...]
-  ccmux kill NAME|UUID
-  ccmux list [--device D | --all]
-  ccmux attach [--device D] NAME|UUID
-  ccmux rename NAME|UUID NAME
-  ccmux device ls
-  ccmux device rm NAME|ID
+  ccmux auth login                        sign in and take over running tmux sessions
+  ccmux auth status                       show current login info
+  ccmux new [FLAGS] [COMMAND...]          start a new tmux session (default)
+  ccmux kill NAME|UUID                    kill a session
+  ccmux list [--device D | --all]         list active sessions
+  ccmux attach [--device D] NAME|UUID     attach to a session
+  ccmux rename NAME|UUID NAME             rename a session
+  ccmux device ls                         list registered devices
+  ccmux device rm NAME|ID                 remove a device
 
 Flags (new):
-  --name     display name shown in the mobile app and used with kill/attach/rename
-             (auto-assigned as 0, 1, 2, … when omitted)
+  --name     session name — also used as the tmux session name
+             (auto-assigned by tmux when omitted)
   --cols     terminal width  (auto-detected from current terminal)
   --rows     terminal height (auto-detected from current terminal)
   --patterns comma-separated extra alert patterns; defaults already include
              "error", "failed", "panic", "fatal", "esc to cancel",
              "do you want", "would you like", "are you sure"
-  --device   remote device name or ID prefix; routes the command to another
-             computer on the same account instead of the local agent
+  --device   spawn on a remote device instead of the local agent
+  --window   add a new window to the existing tmux session (not a new session)
+  --split    split the current tmux pane
+  --bare     skip tmux and use a bare PTY (for machines without tmux)
+
+  When tmux is running, ccmux new always creates a real tmux session.
+  Use ccmux attach to jump into it locally; the mobile app streams it in real time.
+
+Flags (attach):
+  --no-tmux  bypass the tmux fallback and use ccmux PTY attach directly
 
 Flags (list):
   --device   show sessions only on the named device
   --all      show sessions on all devices in your account
 
-  COMMAND defaults to bash when omitted.
-
 Environment:
-  CCMUX_IPC_SOCKET  Unix socket path (default: /tmp/ccmux.sock)`)
+  CCMUX_IPC_SOCKET  Unix socket path (default: /tmp/ccmux.sock)
+  CCMUX_TMUX_WATCH  tmux poll interval for auto-discovery (default: 5s, set 0 to disable)`)
 }

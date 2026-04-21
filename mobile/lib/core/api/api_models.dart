@@ -49,6 +49,8 @@ class SessionModel {
   final int? exitCode;
   final String startedAt;
   final String lastActivity;
+  final bool tmuxBacked;
+  final String tmuxTarget;
 
   const SessionModel({
     required this.id,
@@ -58,6 +60,8 @@ class SessionModel {
     this.exitCode,
     required this.startedAt,
     required this.lastActivity,
+    this.tmuxBacked = false,
+    this.tmuxTarget = '',
   });
 
   factory SessionModel.fromJson(Map<String, dynamic> json) => SessionModel(
@@ -68,7 +72,37 @@ class SessionModel {
         exitCode:     json['exit_code']     as int?,
         startedAt:    json['started_at']    as String,
         lastActivity: json['last_activity'] as String,
+        tmuxBacked:   (json['tmux_backed']  as bool?) ?? false,
+        tmuxTarget:   (json['tmux_target']  as String?) ?? '',
       );
 
   bool get isActive => status == 'active';
+}
+
+// ── Tmux tree models ──────────────────────────────────────────────────────────
+
+class TmuxPaneNode {
+  final String ccmuxId;
+  final String title;
+  final bool active;
+  const TmuxPaneNode({required this.ccmuxId, required this.title, required this.active});
+}
+
+class TmuxWindowNode {
+  final int index;
+  final String name;
+  final List<TmuxPaneNode> panes;
+  const TmuxWindowNode({required this.index, required this.name, required this.panes});
+}
+
+class TmuxSessionNode {
+  final String name;
+  final List<TmuxWindowNode> windows;
+  const TmuxSessionNode({required this.name, required this.windows});
+}
+
+class TmuxTree {
+  final String deviceId;
+  final List<TmuxSessionNode> sessions;
+  const TmuxTree({required this.deviceId, required this.sessions});
 }

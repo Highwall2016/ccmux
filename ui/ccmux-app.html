@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ccmux</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: #0a0a0c; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; }
+  .stage {
+    width: 390px; height: 844px; background: #0d0d0f; border-radius: 44px; overflow: hidden;
+    position: relative; box-shadow: 0 40px 120px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.06);
+    display: flex; flex-direction: column;
+  }
+  .status-bar {
+    height: 48px; display: flex; align-items: flex-end; padding: 0 28px 8px;
+    justify-content: space-between; flex-shrink: 0; background: #0d0d0f;
+  }
+  .status-time { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: -0.3px; }
+  .status-icons { display: flex; gap: 6px; align-items: center; }
+  .status-icons svg { width: 16px; height: 16px; fill: #fff; }
+  .tweaks-panel {
+    position: absolute; bottom: 80px; right: 12px; z-index: 999;
+    background: #1a1a1e; border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px; padding: 16px; width: 210px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  .tweaks-title { font-size: 11px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .tweak-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .tweak-label { font-size: 12px; color: #aaa; }
+  .tweak-toggle { width: 36px; height: 20px; border-radius: 10px; cursor: pointer; transition: background 0.2s; position: relative; flex-shrink: 0; }
+  .tweak-toggle-thumb { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #fff; top: 2px; transition: left 0.2s; }
+  /* modal overlay */
+  .modal-overlay {
+    position: absolute; inset: 0; z-index: 500;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .modal-sheet {
+    background: #16161a; border-radius: 24px 24px 0 0;
+    width: 100%; padding: 20px 20px 36px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    animation: slideUp 0.25s cubic-bezier(0.32,0.72,0,1);
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal-handle { width: 36px; height: 4px; border-radius: 2px; background: #333; margin: 0 auto 20px; }
+</style>
+</head>
+<body>
+<div class="stage" id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const APP_ICON = 'data:image/png;base64,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';
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#3ddc84",
+  "compactList": false,
+  "showAvatars": true,
+  "termFont": "JetBrains Mono"
+}/*EDITMODE-END*/;
+
+const DEVICES = [
+  { id: 'mac', name: 'MacBook Pro', platform: 'macos', online: true },
+  { id: 'ubuntu', name: 'Ubuntu Server', platform: 'linux', online: true },
+  { id: 'vm', name: 'Dev VM', platform: 'linux', online: false },
+];
+
+const SESSIONS_INIT = [
+  { id:'a1', name:'build',  cmd:'make test',               device:'MacBook Pro',   status:'active', unread:3,  exitCode:null, pinned:false, lastOutput:'ok  github.com/ccmux/backend/internal/hub', lastAt:Date.now()-12000,   cpu:34, mem:210,
+    lines:[{t:'cmd',v:'$ make test'},{t:'out',v:'go test ./...'},{t:'out',v:'ok  github.com/ccmux/backend/internal/auth'},{t:'out',v:'ok  github.com/ccmux/backend/internal/hub'},{t:'out',v:'ok  github.com/ccmux/backend/internal/store'},{t:'out',v:'ok  github.com/ccmux/backend/internal/api'}]},
+  { id:'b2', name:'bash',   cmd:'/bin/bash',               device:'MacBook Pro',   status:'active', unread:0,  exitCode:null, pinned:false, lastOutput:'dev@macbook:~/ccmux $',                      lastAt:Date.now()-80000,   cpu:2,  mem:48,
+    lines:[{t:'cmd',v:'$ ls -la'},{t:'out',v:'total 48'},{t:'out',v:'drwxr-xr-x  12 dev  staff   384 Apr 21 .'},{t:'out',v:'-rw-r--r--   1 dev  staff  1024 Apr 21 go.work'},{t:'out',v:'drwxr-xr-x   6 dev  staff   192 Apr 21 agent'},{t:'out',v:'drwxr-xr-x   8 dev  staff   256 Apr 21 backend'},{t:'prompt',v:'dev@macbook:~/ccmux $'}]},
+  { id:'c3', name:'tail',   cmd:'tail -f /var/log/app.log',device:'Ubuntu Server', status:'active', unread:12, exitCode:null, pinned:false, lastOutput:'[ERROR] connection timeout: redis:6379',      lastAt:Date.now()-3000,    cpu:1,  mem:32,
+    lines:[{t:'cmd',v:'$ tail -f /var/log/app.log'},{t:'out',v:'[14:23:01] INFO  hub: agent connected device=abc123'},{t:'out',v:'[14:23:12] INFO  ws: client subscribed session=d9f2'},{t:'err',v:'[14:24:01] ERROR connection timeout: redis:6379'}]},
+  { id:'d4', name:'vim',    cmd:'vim hub.go',              device:'MacBook Pro',   status:'active', unread:0,  exitCode:null, pinned:false, lastOutput:'-- INSERT --',                                lastAt:Date.now()-600000,  cpu:4,  mem:68,
+    lines:[{t:'out',v:'  1  package hub'},{t:'out',v:'  2  '},{t:'out',v:'  3  import ('},{t:'out',v:'  4    "sync"'},{t:'out',v:'  5    "github.com/ccmux/backend/pkg/protocol"'},{t:'out',v:'  6  )'},{t:'statusline',v:'"hub.go" 142L, 3891B   -- INSERT --'}]},
+  { id:'e5', name:'deploy', cmd:'./scripts/deploy.sh',     device:'Ubuntu Server', status:'exited', unread:1,  exitCode:0,    pinned:false, lastOutput:'✓ deploy complete — 2m 14s',                   lastAt:Date.now()-1800000, cpu:0,  mem:0,
+    lines:[{t:'cmd',v:'$ ./scripts/deploy.sh'},{t:'out',v:'→ building docker image…'},{t:'ok',v:'✓ deploy complete — 2m 14s'},{t:'exit',v:'[Process exited with code 0]'}]},
+  { id:'f6', name:'panic',  cmd:'go run ./cmd/server',     device:'Dev VM',        status:'exited', unread:2,  exitCode:1,    pinned:false, lastOutput:'panic: runtime error: nil pointer dereference', lastAt:Date.now()-7200000, cpu:0,  mem:0,
+    lines:[{t:'cmd',v:'$ go run ./cmd/server'},{t:'err',v:'panic: runtime error: invalid memory address or nil pointer dereference'},{t:'err',v:'goroutine 1 [running]:'},{t:'exit',v:'[Process exited with code 1]'}]},
+];
+
+// ─── utils ────────────────────────────────────────────────────────
+function relTime(ts) {
+  const d = Date.now() - ts;
+  if (d < 60000) return `${Math.floor(d/1000)}s`;
+  if (d < 3600000) return `${Math.floor(d/60000)}m`;
+  if (d < 86400000) return `${Math.floor(d/3600000)}h`;
+  return `${Math.floor(d/86400000)}d`;
+}
+
+// ─── Icons ────────────────────────────────────────────────────────
+function IcoLaptop({ color='#555', size=16 }) {
+  return <svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+    <rect x="2" y="4" width="16" height="10" rx="1.5" stroke={color} strokeWidth="1.4"/>
+    <path d="M0 15h20" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+  </svg>;
+}
+function IcoServer({ color='#555', size=16 }) {
+  return <svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+    <rect x="2" y="3" width="16" height="6" rx="1.5" stroke={color} strokeWidth="1.4"/>
+    <rect x="2" y="11" width="16" height="6" rx="1.5" stroke={color} strokeWidth="1.4"/>
+    <circle cx="16" cy="6" r="1" fill={color}/>
+    <circle cx="16" cy="14" r="1" fill={color}/>
+  </svg>;
+}
+function IcoSettings({ color='#888', size=18 }) {
+  return <svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+    <circle cx="10" cy="10" r="2.5" stroke={color} strokeWidth="1.4"/>
+    <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+  </svg>;
+}
+function IcoPin({ color, size=11 }) {
+  return <svg width={size} height={size} viewBox="0 0 12 12" fill="none">
+    <path d="M9 1L11 3L7.5 5.5L8 9L6 7L4 9L4.5 5.5L1 3L3 1L6 4L9 1Z" fill={color} opacity="0.9"/>
+  </svg>;
+}
+function IcoChevron({ color='#555', size=14 }) {
+  return <svg width={size} height={size} viewBox="0 0 14 14" fill="none">
+    <path d="M5 3l4 4-4 4" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>;
+}
+
+// ─── Avatar ───────────────────────────────────────────────────────
+const AVATAR_COLORS = { bash:'#3ddc84', build:'#61afef', tail:'#e5c07b', vim:'#c678dd', deploy:'#56b6c2', panic:'#e06c75' };
+function Avatar({ session, accent, show }) {
+  if (!show) return null;
+  const bg = AVATAR_COLORS[session.name] || accent;
+  return (
+    <div style={{ width:46, height:46, borderRadius:14, flexShrink:0, background:bg+'22', border:`1.5px solid ${bg}44`,
+      display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'JetBrains Mono',
+      fontSize:13, fontWeight:700, color:bg, letterSpacing:-0.5, position:'relative' }}>
+      {session.name.slice(0,2).toUpperCase()}
+      <div style={{ position:'absolute', bottom:-2, right:-2, width:10, height:10, borderRadius:'50%',
+        background: session.status==='active' ? accent : (session.exitCode===0 ? '#56b6c2' : '#e06c75'),
+        border:'2px solid #0d0d0f' }}/>
+    </div>
+  );
+}
+
+// ─── Swipeable Session Row ────────────────────────────────────────
+function SessionRow({ session, onClick, onKill, onRename, onPin, accent, compact, showAvatars }) {
+  const isUnread = session.unread > 0;
+  const isError = session.exitCode !== null && session.exitCode !== 0;
+  const [swipeX, setSwipeX] = useState(0);
+  const [confirmed, setConfirmed] = useState(false);
+  const startX = useRef(null);
+  const longPressTimer = useRef(null);
+  const isDragging = useRef(false);
+  const KILL_THRESHOLD = -72;
+
+  // touch/mouse handlers for swipe
+  const onDragStart = (clientX) => { startX.current = clientX; isDragging.current = false; };
+  const onDragMove = (clientX) => {
+    if (startX.current == null) return;
+    const dx = clientX - startX.current;
+    if (Math.abs(dx) > 5) isDragging.current = true;
+    if (dx < 0) setSwipeX(Math.max(dx, -90));
+    else setSwipeX(Math.min(dx, 0));
+  };
+  const onDragEnd = () => {
+    startX.current = null;
+    if (swipeX < KILL_THRESHOLD) setSwipeX(-80);
+    else setSwipeX(0);
+  };
+
+  // long press
+  const onPressStart = (clientX) => {
+    onDragStart(clientX);
+    longPressTimer.current = setTimeout(() => {
+      if (!isDragging.current) onRename(session);
+    }, 600);
+  };
+  const onPressEnd = () => {
+    clearTimeout(longPressTimer.current);
+    onDragEnd();
+  };
+
+  const closeSwipe = () => setSwipeX(0);
+
+  const handleKill = (e) => {
+    e.stopPropagation();
+    if (!confirmed) { setConfirmed(true); return; }
+    onKill(session.id);
+  };
+
+  // reset confirm when closed
+  useEffect(() => { if (swipeX === 0) setConfirmed(false); }, [swipeX]);
+
+  const killBgColor = confirmed ? '#c0392b' : '#e06c75';
+
+  return (
+    <div style={{ position:'relative', overflow:'hidden', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
+      {/* kill action behind */}
+      <div style={{
+        position:'absolute', right:0, top:0, bottom:0, width:80,
+        background: killBgColor, display:'flex', alignItems:'center', justifyContent:'center',
+        transition:'background 0.2s',
+      }}>
+        <div onClick={handleKill} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3, cursor:'pointer' }}>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M3 5h12M7 5V3h4v2M8 8v6M10 8v6M4 5l1 10h8l1-10" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <span style={{ fontSize:10, color:'#fff', fontWeight:600 }}>{confirmed ? 'Sure?' : 'Kill'}</span>
+        </div>
+      </div>
+
+      {/* row content */}
+      <div
+        style={{
+          display:'flex', alignItems:'center', gap:12,
+          padding: compact ? '10px 20px' : '13px 20px',
+          cursor:'pointer', background:'#0d0d0f',
+          transform:`translateX(${swipeX}px)`,
+          transition: startX.current ? 'none' : 'transform 0.25s cubic-bezier(0.32,0.72,0,1)',
+          userSelect:'none', WebkitTapHighlightColor:'transparent',
+          position:'relative',
+        }}
+        onClick={() => { if (Math.abs(swipeX) > 5) { closeSwipe(); return; } onClick(); }}
+        onMouseEnter={e => { if (swipeX===0) e.currentTarget.style.background='rgba(255,255,255,0.04)'; }}
+        onMouseLeave={e => { e.currentTarget.style.background='#0d0d0f'; }}
+        onMouseDown={e => onPressStart(e.clientX)}
+        onMouseMove={e => onDragMove(e.clientX)}
+        onMouseUp={onPressEnd}
+        onTouchStart={e => onPressStart(e.touches[0].clientX)}
+        onTouchMove={e => onDragMove(e.touches[0].clientX)}
+        onTouchEnd={onPressEnd}
+      >
+        <Avatar session={session} accent={accent} show={showAvatars} />
+
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:3 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              {session.pinned && <IcoPin color={accent} size={10}/>}
+              <span style={{
+                fontFamily:'JetBrains Mono', fontSize:14,
+                fontWeight: isUnread ? 700 : 500,
+                color: isUnread ? '#fff' : '#888', letterSpacing:-0.3,
+              }}>{session.name}</span>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ fontSize:11, color:'#3d3d42' }}>{relTime(session.lastAt)}</span>
+              {session.unread > 0 && (
+                <div style={{ minWidth:18, height:18, borderRadius:9, padding:'0 5px',
+                  background: isError ? '#e06c75' : accent,
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  fontSize:10, fontWeight:700, color:'#000' }}>{session.unread}</div>
+              )}
+            </div>
+          </div>
+          <div style={{
+            fontSize:12, color: isUnread ? '#aaa' : '#444',
+            fontFamily:'JetBrains Mono', fontWeight: isUnread ? 500 : 400,
+            overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', letterSpacing:-0.2,
+          }}>{session.lastOutput}</div>
+          {!compact && (
+            <div style={{ fontSize:10.5, color:'#353539', marginTop:2, fontFamily:'JetBrains Mono' }}>
+              {session.cmd}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Device Switcher Modal ────────────────────────────────────────
+function DeviceSwitcherModal({ devices, currentDevice, sessions, onSelect, onClose, accent }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+        <div className="modal-handle"/>
+        <div style={{ fontSize:16, fontWeight:700, color:'#fff', marginBottom:16, letterSpacing:-0.3 }}>Switch Device</div>
+        {devices.map(dev => {
+          const devSessions = sessions.filter(s => s.device === dev.name);
+          const active = devSessions.filter(s => s.status==='active').length;
+          const unread = devSessions.reduce((sum,s) => sum+s.unread, 0);
+          const isCurrent = dev.name === currentDevice;
+          return (
+            <div key={dev.id} onClick={() => { onSelect(dev.name); onClose(); }}
+              style={{
+                display:'flex', alignItems:'center', gap:14, padding:'12px 14px',
+                borderRadius:14, marginBottom:6, cursor:'pointer',
+                background: isCurrent ? accent+'18' : 'rgba(255,255,255,0.04)',
+                border: `1.5px solid ${isCurrent ? accent+'44' : 'rgba(255,255,255,0.07)'}`,
+                transition:'background 0.15s',
+              }}>
+              <div style={{ width:40, height:40, borderRadius:12, background:'rgba(255,255,255,0.06)',
+                display:'flex', alignItems:'center', justifyContent:'center' }}>
+                {dev.platform === 'macos'
+                  ? <IcoLaptop color={isCurrent ? accent : '#666'} size={18}/>
+                  : <IcoServer color={isCurrent ? accent : '#666'} size={18}/>}
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:14, fontWeight:600, color: isCurrent ? '#fff' : '#aaa', letterSpacing:-0.2 }}>{dev.name}</div>
+                <div style={{ fontSize:11, color:'#444', marginTop:2, fontFamily:'JetBrains Mono' }}>
+                  {dev.online ? `${active} active session${active!==1?'s':''}` : 'offline'}
+                </div>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                {unread > 0 && (
+                  <div style={{ minWidth:18, height:18, borderRadius:9, padding:'0 5px',
+                    background:accent, display:'flex', alignItems:'center', justifyContent:'center',
+                    fontSize:10, fontWeight:700, color:'#000' }}>{unread}</div>
+                )}
+                <div style={{ width:8, height:8, borderRadius:'50%', background: dev.online ? accent : '#444' }}/>
+              </div>
+            </div>
+          );
+        })}
+        <div onClick={onClose} style={{
+          marginTop:8, textAlign:'center', fontSize:13, color:'#555', cursor:'pointer', padding:'8px',
+        }}>Cancel</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Rename Modal ─────────────────────────────────────────────────
+function RenameModal({ session, onConfirm, onClose, accent }) {
+  const [value, setValue] = useState(session.name);
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+        <div className="modal-handle"/>
+        <div style={{ fontSize:16, fontWeight:700, color:'#fff', marginBottom:6, letterSpacing:-0.3 }}>Rename Session</div>
+        <div style={{ fontSize:12, color:'#555', fontFamily:'JetBrains Mono', marginBottom:18 }}>{session.cmd}</div>
+        <div style={{
+          display:'flex', alignItems:'center', gap:8,
+          background:'#0d0d0f', borderRadius:12, padding:'2px 12px',
+          border:`1.5px solid ${accent}55`,
+        }}>
+          <span style={{ fontFamily:'JetBrains Mono', fontSize:13, color:accent }}>$</span>
+          <input ref={inputRef} value={value} onChange={e => setValue(e.target.value)}
+            onKeyDown={e => { if (e.key==='Enter') onConfirm(value); if (e.key==='Escape') onClose(); }}
+            style={{ flex:1, background:'none', border:'none', outline:'none', fontFamily:'JetBrains Mono',
+              fontSize:14, color:'#fff', padding:'12px 0', letterSpacing:-0.3 }}/>
+        </div>
+        <div style={{ display:'flex', gap:10, marginTop:16 }}>
+          <div onClick={onClose} style={{
+            flex:1, padding:'12px', textAlign:'center', borderRadius:12,
+            background:'rgba(255,255,255,0.06)', color:'#888', fontSize:14, fontWeight:500, cursor:'pointer',
+          }}>Cancel</div>
+          <div onClick={() => onConfirm(value)} style={{
+            flex:1, padding:'12px', textAlign:'center', borderRadius:12,
+            background:accent, color:'#000', fontSize:14, fontWeight:700, cursor:'pointer',
+          }}>Rename</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Session List ─────────────────────────────────────────────────
+function SessionList({ sessions, onSelect, onKill, onRename, onPin, tweaks, currentDevice, onOpenDeviceSwitcher, onOpenSettings }) {
+  const accent = tweaks.accentColor;
+  const filtered = sessions.filter(s => s.device === currentDevice);
+
+  const sorted = [...filtered].sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    if (b.unread !== a.unread) return b.unread - a.unread;
+    return b.lastAt - a.lastAt;
+  });
+
+  const active = sorted.filter(s => s.status === 'active');
+  const exited = sorted.filter(s => s.status === 'exited');
+  const dev = DEVICES.find(d => d.name === currentDevice);
+
+  const SectionLabel = ({label}) => (
+    <div style={{ padding:'12px 20px 5px', fontSize:10.5, fontWeight:600, color:'#3a3a3f', textTransform:'uppercase', letterSpacing:1 }}>
+      {label}
+    </div>
+  );
+
+  return (
+    <div style={{ flex:1, overflowY:'auto', overflowX:'hidden' }}>
+      {/* header */}
+      <div style={{ padding:'8px 20px 14px', background:'#0d0d0f', borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          {/* settings button */}
+          <button onClick={onOpenSettings} style={{
+            background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.08)',
+            borderRadius:10, width:36, height:36, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer',
+          }}>
+            <IcoSettings color='#777' size={17}/>
+          </button>
+
+          {/* device name — tap to switch */}
+          <div onClick={onOpenDeviceSwitcher} style={{ flex:1, textAlign:'center', cursor:'pointer', userSelect:'none' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+              {dev?.platform==='macos' ? <IcoLaptop color={accent} size={14}/> : <IcoServer color={accent} size={14}/>}
+              <span style={{ fontSize:17, fontWeight:700, color:'#fff', letterSpacing:-0.4 }}>{currentDevice}</span>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M3 5l3 3 3-3" stroke="#555" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <div style={{ fontSize:11, color:'#555', marginTop:2, fontFamily:'JetBrains Mono' }}>
+              {filtered.filter(s=>s.status==='active').length} active
+              {filtered.filter(s=>s.unread>0).length > 0 && ` · ${filtered.filter(s=>s.unread>0).length} unread`}
+            </div>
+          </div>
+
+          {/* new session */}
+          <div style={{
+            width:36, height:36, borderRadius:10, background:accent+'22', border:`1px solid ${accent}44`,
+            display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer',
+          }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M7 2v10M2 7h10" stroke={accent} strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      {active.length > 0 && <>
+        <SectionLabel label="Active"/>
+        {active.map(s => (
+          <SessionRow key={s.id} session={s}
+            onClick={() => onSelect(s)} onKill={onKill} onRename={onRename} onPin={onPin}
+            accent={accent} compact={tweaks.compactList} showAvatars={tweaks.showAvatars}/>
+        ))}
+      </>}
+
+      {exited.length > 0 && <>
+        <SectionLabel label="Ended"/>
+        {exited.map(s => (
+          <SessionRow key={s.id} session={s}
+            onClick={() => onSelect(s)} onKill={onKill} onRename={onRename} onPin={onPin}
+            accent={accent} compact={tweaks.compactList} showAvatars={tweaks.showAvatars}/>
+        ))}
+      </>}
+
+      {sorted.length === 0 && (
+        <div style={{ padding:'60px 20px', textAlign:'center' }}>
+          <div style={{ fontFamily:'JetBrains Mono', fontSize:12, color:'#333' }}>no sessions</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Settings Modal ───────────────────────────────────────────────
+function SettingsModal({ onClose, accent }) {
+  const rows = [
+    { icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="6" r="3" stroke="#aaa" strokeWidth="1.4"/><path d="M3 15c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="#aaa" strokeWidth="1.4" strokeLinecap="round"/></svg>, label:'Account', sub:'dev@ccmux.local' },
+    { icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2l1.8 3.6L15 6.3l-3 2.9.7 4.1L9 11.4l-3.7 1.9.7-4.1-3-2.9 4.2-.7z" stroke="#e5c07b" strokeWidth="1.3" strokeLinejoin="round"/></svg>, label:'Upgrade to Pro', sub:'Unlimited devices & sessions', color:'#e5c07b', highlight:true },
+    { icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="2" y="3" width="14" height="11" rx="2" stroke="#aaa" strokeWidth="1.4"/><path d="M6 7h6M6 10h4" stroke="#aaa" strokeWidth="1.3" strokeLinecap="round"/></svg>, label:'About ccmux', sub:'v0.5.0 · Phase 5' },
+    { icon: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7" stroke="#aaa" strokeWidth="1.4"/><path d="M9 6v4M9 12v.5" stroke="#aaa" strokeWidth="1.5" strokeLinecap="round"/></svg>, label:'Help & Docs', sub:'github.com/ccmux' },
+  ];
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+        <div className="modal-handle"/>
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+          <img src={APP_ICON} width={32} height={32} style={{ borderRadius:8 }} alt=""/>
+          <div style={{ fontSize:16, fontWeight:700, color:'#fff', letterSpacing:-0.3 }}>Settings</div>
+        </div>
+        {rows.map(r => (
+          <div key={r.label} style={{
+            display:'flex', alignItems:'center', gap:14, padding:'12px 14px',
+            borderRadius:14, marginBottom:6, cursor:'pointer',
+            background: r.highlight ? r.color+'12' : 'rgba(255,255,255,0.04)',
+            border: `1.5px solid ${r.highlight ? r.color+'44' : 'rgba(255,255,255,0.07)'}`,
+          }}>
+            <div style={{ width:36, height:36, borderRadius:10, background:'rgba(255,255,255,0.06)',
+              display:'flex', alignItems:'center', justifyContent:'center' }}>{r.icon}</div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:14, fontWeight:600, color: r.color || '#ccc', letterSpacing:-0.2 }}>{r.label}</div>
+              {r.sub && <div style={{ fontSize:11, color:'#555', marginTop:1, fontFamily:'JetBrains Mono' }}>{r.sub}</div>}
+            </div>
+            <IcoChevron color="#444"/>
+          </div>
+        ))}
+        <div style={{ marginTop:8, padding:'12px 14px', borderRadius:14, cursor:'pointer',
+          background:'rgba(224,108,117,0.08)', border:'1.5px solid rgba(224,108,117,0.2)',
+          display:'flex', alignItems:'center', gap:14 }}>
+          <div style={{ width:36, height:36, borderRadius:10, background:'rgba(224,108,117,0.1)',
+            display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path d="M7 3H4a1 1 0 00-1 1v10a1 1 0 001 1h3M11 12l4-4-4-4M15 8H7" stroke="#e06c75" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <span style={{ fontSize:14, fontWeight:600, color:'#e06c75' }}>Sign Out</span>
+        </div>
+        <div onClick={onClose} style={{ marginTop:12, textAlign:'center', fontSize:13, color:'#555', cursor:'pointer', padding:'6px' }}>Close</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Resource Widget ──────────────────────────────────────────────
+function ResourceWidget({ session, accent }) {
+  const [cpu, setCpu] = useState(session.cpu);
+  const [mem, setMem] = useState(session.mem);
+  useEffect(() => {
+    if (session.status !== 'active') return;
+    const iv = setInterval(() => {
+      setCpu(c => Math.max(0, Math.min(100, c + (Math.random()-0.5)*12)));
+      setMem(m => Math.max(10, Math.min(512, m + (Math.random()-0.5)*8)));
+    }, 1200);
+    return () => clearInterval(iv);
+  }, [session.status]);
+  const cpuColor = cpu>80 ? '#e06c75' : cpu>50 ? '#e5c07b' : accent;
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:4, background:'rgba(255,255,255,0.05)', borderRadius:8, padding:'4px 8px' }}>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <rect x="2" y="2" width="6" height="6" rx="1" stroke={cpuColor} strokeWidth="1.2"/>
+          <rect x="3.5" y="3.5" width="3" height="3" fill={cpuColor} rx="0.4"/>
+          <path d="M4 1V0M6 1V0M4 10V9M6 10V9M1 4H0M1 6H0M10 4H9M10 6H9" stroke={cpuColor} strokeWidth="0.8" strokeLinecap="round"/>
+        </svg>
+        <span style={{ fontFamily:'JetBrains Mono', fontSize:10.5, color:cpuColor, fontWeight:600 }}>{Math.round(cpu)}%</span>
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap:4, background:'rgba(255,255,255,0.05)', borderRadius:8, padding:'4px 8px' }}>
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <rect x="0.5" y="2.5" width="9" height="5" rx="1" stroke="#61afef" strokeWidth="1.2"/>
+          <rect x="2" y="4" width="1.2" height="2" fill="#61afef" rx="0.3"/>
+          <rect x="4.4" y="4" width="1.2" height="2" fill="#61afef" rx="0.3"/>
+          <rect x="6.8" y="4" width="1.2" height="2" fill="#61afef" rx="0.3"/>
+        </svg>
+        <span style={{ fontFamily:'JetBrains Mono', fontSize:10.5, color:'#61afef', fontWeight:600 }}>{Math.round(mem)}M</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Terminal View ─────────────────────────────────────────────────
+function TerminalView({ session, onBack, tweaks, onPin, onRename }) {
+  const accent = tweaks.accentColor;
+  const [lines, setLines] = useState(session.lines);
+  const [cursor, setCursor] = useState('▊');
+  const [input, setInput] = useState('');
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    const iv = setInterval(() => setCursor(c => c === '▊' ? '' : '▊'), 530);
+    return () => clearInterval(iv);
+  }, []);
+
+  useEffect(() => {
+    if (session.status !== 'active') return;
+    const pool = [
+      { id:'c3', line:{ t:'out', v:`[${new Date().toTimeString().slice(0,8)}] INFO  ws: ping` } },
+      { id:'a1', line:{ t:'out', v:`--- PASS: TestBroadcast (0.02s)` } },
+      { id:'c3', line:{ t:'err', v:`[${new Date().toTimeString().slice(0,8)}] WARN  relay: retry` } },
+    ];
+    const iv = setInterval(() => {
+      const snip = pool.find(s => s.id === session.id);
+      if (snip) setLines(l => [...l, snip.line]);
+    }, 2800);
+    return () => clearInterval(iv);
+  }, [session.id, session.status]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [lines]);
+
+  const sendInput = () => {
+    if (!input.trim()) return;
+    setLines(l => [...l, { t:'cmd', v:`$ ${input}` }, { t:'prompt', v:`zsh: command not found: ${input}` }]);
+    setInput('');
+  };
+
+  const lineColors = { cmd:accent, out:'#cdd6f4', err:'#e06c75', ok:'#3ddc84', prompt:'#666', exit:'#555', statusline:'#282c34' };
+
+  const toolbarBtns = [
+    { label:'Tab' }, { label:'Esc' }, { label:'Ctrl' }, { label:'Alt' },
+    { label:'Ctrl+C', color:'#e06c75' },
+    { label:'←' }, { label:'→' }, { label:'↑' }, { label:'↓' },
+    { label:'PgUp' }, { label:'PgDn' },
+  ];
+
+  return (
+    <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      {/* nav */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+        padding:'6px 16px 10px', borderBottom:'1px solid rgba(255,255,255,0.07)', background:'#0d0d0f', flexShrink:0 }}>
+        <button onClick={onBack} style={{ background:'none', border:'none', cursor:'pointer',
+          display:'flex', alignItems:'center', gap:4, color:accent, padding:'4px 0' }}>
+          <svg width="8" height="14" viewBox="0 0 8 14" fill="none">
+            <path d="M7 1L1 7l6 6" stroke={accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <span style={{ fontSize:13, fontWeight:500 }}>{session.device.split(' ')[0]}</span>
+        </button>
+
+        <div style={{ textAlign:'center' }}>
+          <div style={{ fontFamily:'JetBrains Mono', fontSize:13, fontWeight:600, color:'#fff', letterSpacing:-0.3 }}>
+            {session.pinned && <span style={{ color:accent, marginRight:4 }}>📌</span>}
+            {session.name}
+          </div>
+          <div style={{ fontSize:10, color:'#444', fontFamily:'JetBrains Mono' }}>{session.cmd}</div>
+        </div>
+
+        <ResourceWidget session={session} accent={accent}/>
+      </div>
+
+      {/* output */}
+      <div ref={scrollRef} style={{ flex:1, overflowY:'auto', overflowX:'hidden', background:'#080809', paddingTop:10, paddingBottom:10 }}>
+        {lines.map((line, i) => (
+          <div key={i} style={{
+            fontFamily:'JetBrains Mono, monospace', fontSize:11.5,
+            color: line.t==='statusline' ? '#282c34' : lineColors[line.t]||'#cdd6f4',
+            lineHeight:1.7, whiteSpace:'pre', letterSpacing:-0.2,
+            background: line.t==='statusline' ? '#abb2bf' : undefined,
+            padding: line.t==='statusline' ? '1px 12px' : '0 16px',
+          }}>{line.v}</div>
+        ))}
+        {session.status==='active' && (
+          <div style={{ fontFamily:'JetBrains Mono', fontSize:11.5, color:accent, padding:'0 16px', lineHeight:1.7 }}>
+            $ {cursor}
+          </div>
+        )}
+      </div>
+
+      {/* special key toolbar */}
+      <div style={{ background:'#0a0a0c', borderTop:'1px solid rgba(255,255,255,0.05)', flexShrink:0, overflowX:'auto', overflowY:'hidden' }}>
+        <div style={{ display:'flex', padding:'6px 8px', gap:5, width:'max-content', minWidth:'100%' }}>
+          {toolbarBtns.map(k => {
+            const isArrow = ['←','→','↑','↓'].includes(k.label);
+            return (
+              <div key={k.label} style={{
+                minWidth: k.label.length>3 ? 52 : 38, height:34, borderRadius:8, flexShrink:0,
+                display:'flex', alignItems:'center', justifyContent:'center', padding:'0 6px',
+                background: k.color ? k.color+'18' : '#1a1a1e',
+                border: `1px solid ${k.color ? k.color+'33' : 'rgba(255,255,255,0.06)'}`,
+                fontSize: isArrow ? 16 : 11, fontWeight: k.color ? 600 : 500,
+                color: k.color || '#888', fontFamily:'JetBrains Mono',
+                cursor:'pointer', userSelect:'none', transition:'all 0.1s',
+              }}
+              onMouseDown={e => { e.currentTarget.style.background=k.color?k.color+'33':'#252529'; e.currentTarget.style.color=k.color||'#fff'; }}
+              onMouseUp={e => { e.currentTarget.style.background=k.color?k.color+'18':'#1a1a1e'; e.currentTarget.style.color=k.color||'#888'; }}
+              >{k.label}</div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* input */}
+      {session.status==='active' && (
+        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px 10px',
+          background:'#0d0d0f', borderTop:'1px solid rgba(255,255,255,0.06)', flexShrink:0 }}>
+          <div style={{ flex:1, background:'#161619', border:'1px solid rgba(255,255,255,0.08)',
+            borderRadius:10, display:'flex', alignItems:'center', padding:'0 10px' }}>
+            <span style={{ fontFamily:'JetBrains Mono', fontSize:12, color:accent, marginRight:6 }}>$</span>
+            <input value={input} onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key==='Enter') sendInput(); }}
+              placeholder="type a command…"
+              style={{ background:'none', border:'none', outline:'none', fontFamily:'JetBrains Mono',
+                fontSize:12, color:'#cdd6f4', flex:1, padding:'7px 0' }}/>
+          </div>
+          <button onClick={sendInput} style={{ width:34, height:34, borderRadius:9, background:accent+'22',
+            border:`1px solid ${accent}55`, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer' }}>
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <path d="M1 12L12 6.5 1 1v4l7.5 1.5L1 8z" fill={accent}/>
+            </svg>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tweaks Panel ─────────────────────────────────────────────────
+function TweaksPanel({ tweaks, setTweaks }) {
+  const Toggle = ({ k }) => {
+    const on = tweaks[k];
+    return (
+      <div className="tweak-toggle" style={{ background: on ? tweaks.accentColor : '#333' }}
+        onClick={() => setTweaks(t => ({ ...t, [k]: !t[k] }))}>
+        <div className="tweak-toggle-thumb" style={{ left: on ? 18 : 2 }}/>
+      </div>
+    );
+  };
+  return (
+    <div className="tweaks-panel">
+      <div className="tweaks-title">Tweaks</div>
+      <div className="tweak-row">
+        <span className="tweak-label">Accent color</span>
+        <div style={{ display:'flex', gap:5 }}>
+          {['#3ddc84','#61afef','#c678dd','#e5c07b'].map(c => (
+            <div key={c} onClick={() => setTweaks(t => ({ ...t, accentColor:c }))} style={{
+              width:18, height:18, borderRadius:'50%', background:c, cursor:'pointer',
+              border: tweaks.accentColor===c ? '2px solid #fff' : '2px solid transparent',
+            }}/>
+          ))}
+        </div>
+      </div>
+      <div className="tweak-row"><span className="tweak-label">Compact list</span><Toggle k="compactList"/></div>
+      <div className="tweak-row"><span className="tweak-label">Show avatars</span><Toggle k="showAvatars"/></div>
+    </div>
+  );
+}
+
+// ─── Login View ───────────────────────────────────────────────────
+function LoginView({ onLogin }) {
+  const [email, setEmail] = React.useState('');
+  const [pass, setPass] = React.useState('');
+  const inputStyle = {
+    width:'100%', background:'#0d0d0f', border:'1px solid rgba(255,255,255,0.1)',
+    borderRadius:10, padding:'11px 14px', fontFamily:'Inter,sans-serif',
+    fontSize:14, color:'#ccc', outline:'none', boxSizing:'border-box',
+  };
+  return (
+    <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center',
+      justifyContent:'center', padding:'0 28px', gap:0 }}>
+      <img src={APP_ICON} width={80} height={80} style={{ borderRadius:18, marginBottom:18, boxShadow:'0 8px 32px rgba(0,0,0,0.5)' }} alt="ccmux"/>
+      <div style={{ fontSize:26, fontWeight:700, color:'#fff', letterSpacing:-0.5, marginBottom:4 }}>ccmux</div>
+      <div style={{ fontSize:12, color:'#444', fontFamily:'JetBrains Mono', marginBottom:32 }}>terminal multiplexer</div>
+      <div style={{ width:'100%', display:'flex', flexDirection:'column', gap:12 }}>
+        <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" type="email"
+          style={inputStyle}/>
+        <input value={pass} onChange={e=>setPass(e.target.value)} placeholder="Password" type="password"
+          style={inputStyle}/>
+        <div onClick={onLogin} style={{
+          marginTop:4, padding:'13px', textAlign:'center', borderRadius:12,
+          background:'#3ddc84', color:'#000', fontSize:14, fontWeight:700, cursor:'pointer',
+          letterSpacing:-0.2,
+        }}>Sign in</div>
+        <div style={{ textAlign:'center', fontSize:13, color:'#555', cursor:'pointer', paddingTop:4 }}>
+          Create account
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Status Bar ───────────────────────────────────────────────────
+function StatusBar() {
+  const [time, setTime] = useState('');
+  useEffect(() => {
+    const upd = () => { const d=new Date(); setTime(`${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`); };
+    upd(); const iv=setInterval(upd,30000); return ()=>clearInterval(iv);
+  }, []);
+  return (
+    <div className="status-bar">
+      <div className="status-time">{time}</div>
+      <div style={{ width:126, height:30, background:'#000', borderRadius:20, position:'absolute', top:8, left:'50%', transform:'translateX(-50%)' }}/>
+      <div className="status-icons">
+        <svg viewBox="0 0 16 16"><path d="M1 6c0-2.8 2.2-5 5-5h4c2.8 0 5 2.2 5 5v1H1V6z" opacity=".3"/><path d="M1 7h14v2c0 2.8-2.2 5-5 5H6C3.2 14 1 11.8 1 9V7z"/></svg>
+        <svg viewBox="0 0 16 16"><path d="M8 2C5 2 2.5 4 2 6.8c-.1.5.3.9.8.9H4c.4 0 .8-.3.9-.7C5.2 5.3 6.5 4 8 4s2.8 1.3 3.1 3c.1.4.5.7.9.7h1.2c.5 0 .9-.4.8-.9C13.5 4 11 2 8 2z" opacity=".3"/><path d="M8 5c-1.2 0-2.2.8-2.6 2H4c.4-2.3 2.3-4 4-4s3.6 1.7 4 4h-1.4C10.2 5.8 9.2 5 8 5z" opacity=".6"/><circle cx="8" cy="10" r="2"/></svg>
+        <svg viewBox="0 0 25 12"><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="#fff" strokeOpacity=".35"/><rect x="2" y="2" width="14" height="8" rx="2" fill="#fff"/><path d="M23 4v4a2 2 0 000-4z" fill="#fff" opacity=".4"/></svg>
+      </div>
+    </div>
+  );
+}
+
+// ─── Context Menu (long-press popup) ──────────────────────────────
+// We handle rename via modal, pin via callback directly in the row's long press.
+// Instead let's do a context menu sheet with options.
+
+// ─── App ──────────────────────────────────────────────────────────
+function App() {
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [sessions, setSessions] = useState(SESSIONS_INIT);
+  const [selected, setSelected] = useState(null);
+  const [tweaks, setTweaks] = useState(TWEAK_DEFAULTS);
+  const [showTweaks, setShowTweaks] = useState(false);
+  const [currentDevice, setCurrentDevice] = useState('MacBook Pro');
+  const [showDeviceSwitcher, setShowDeviceSwitcher] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [renameSession, setRenameSession] = useState(null);
+  const [contextSession, setContextSession] = useState(null);
+
+  useEffect(() => {
+    const handler = e => {
+      if (e.data?.type==='__activate_edit_mode') setShowTweaks(true);
+      if (e.data?.type==='__deactivate_edit_mode') setShowTweaks(false);
+    };
+    window.addEventListener('message', handler);
+    window.parent.postMessage({ type:'__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  useEffect(() => {
+    window.parent.postMessage({ type:'__edit_mode_set_keys', edits:tweaks }, '*');
+  }, [tweaks]);
+
+  // simulate live output
+  useEffect(() => {
+    const targets = ['c3','a1'];
+    const iv = setInterval(() => {
+      const id = targets[Math.floor(Math.random()*targets.length)];
+      setSessions(ss => ss.map(s =>
+        s.id===id && selected?.id!==id
+          ? { ...s, unread:s.unread+1, lastAt:Date.now(),
+              lastOutput: id==='c3'
+                ? `[${new Date().toTimeString().slice(0,8)}] INFO  hub: broadcast`
+                : `ok  backend/internal/api (${(Math.random()*2).toFixed(2)}s)` }
+          : s
+      ));
+    }, 4000);
+    return () => clearInterval(iv);
+  }, [selected]);
+
+  const selectSession = s => {
+    setSessions(ss => ss.map(x => x.id===s.id ? {...x, unread:0} : x));
+    setSelected(sessions.find(x => x.id===s.id) || s);
+  };
+
+  const killSession = id => setSessions(ss => ss.filter(s => s.id!==id));
+
+  const renameSessionFn = (session, newName) => {
+    setSessions(ss => ss.map(s => s.id===session.id ? {...s, name:newName.trim()||s.name} : s));
+    setRenameSession(null);
+  };
+
+  const pinSession = id => {
+    setSessions(ss => ss.map(s => s.id===id ? {...s, pinned:!s.pinned} : s));
+  };
+
+  // long press → show context menu sheet
+  const handleLongPress = (session) => setContextSession(session);
+
+  // updated selected session ref
+  const liveSelected = selected ? sessions.find(s=>s.id===selected.id) || selected : null;
+
+  const accent = tweaks.accentColor;
+
+  return (
+    <>
+      <StatusBar/>
+      {!loggedIn ? (
+        <LoginView onLogin={() => setLoggedIn(true)}/>
+      ) : liveSelected ? (
+        <TerminalView
+          session={liveSelected}
+          onBack={() => setSelected(null)}
+          tweaks={tweaks}
+          onPin={() => pinSession(liveSelected.id)}
+          onRename={() => setRenameSession(liveSelected)}
+        />
+      ) : (
+        <SessionList
+          sessions={sessions}
+          onSelect={selectSession}
+          onKill={killSession}
+          onRename={handleLongPress}
+          onPin={pinSession}
+          tweaks={tweaks}
+          currentDevice={currentDevice}
+          onOpenDeviceSwitcher={() => setShowDeviceSwitcher(true)}
+          onOpenSettings={() => setShowSettings(true)}
+        />
+      )}
+
+      {/* Settings modal */}
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} accent={accent}/>
+      )}
+
+      {/* Device switcher modal */}
+      {showDeviceSwitcher && (
+        <DeviceSwitcherModal
+          devices={DEVICES}
+          currentDevice={currentDevice}
+          sessions={sessions}
+          onSelect={setCurrentDevice}
+          onClose={() => setShowDeviceSwitcher(false)}
+          accent={accent}
+        />
+      )}
+
+      {/* Rename modal */}
+      {renameSession && (
+        <RenameModal
+          session={renameSession}
+          onConfirm={(name) => renameSessionFn(renameSession, name)}
+          onClose={() => setRenameSession(null)}
+          accent={accent}
+        />
+      )}
+
+      {/* Context menu (long press) */}
+      {contextSession && (
+        <div className="modal-overlay" onClick={() => setContextSession(null)}>
+          <div className="modal-sheet" onClick={e => e.stopPropagation()}>
+            <div className="modal-handle"/>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+              <div style={{ fontFamily:'JetBrains Mono', fontSize:15, fontWeight:700, color:'#fff' }}>
+                {contextSession.pinned && '📌 '}{contextSession.name}
+              </div>
+              <div style={{ fontFamily:'JetBrains Mono', fontSize:11, color:'#555' }}>{contextSession.cmd}</div>
+            </div>
+            {[
+              { icon:'✏️', label:'Rename', action:() => { setRenameSession(contextSession); setContextSession(null); } },
+              { icon: contextSession.pinned ? '📌' : '📌', label: contextSession.pinned ? 'Unpin' : 'Pin to top', action:() => { pinSession(contextSession.id); setContextSession(null); }, color: accent },
+              { icon:'🗑', label:'Kill session', action:() => { killSession(contextSession.id); setContextSession(null); }, color:'#e06c75' },
+            ].map(item => (
+              <div key={item.label} onClick={item.action} style={{
+                display:'flex', alignItems:'center', gap:14, padding:'13px 14px',
+                borderRadius:12, marginBottom:6, cursor:'pointer',
+                background:'rgba(255,255,255,0.04)',
+                border:'1px solid rgba(255,255,255,0.07)',
+              }}>
+                <span style={{ fontSize:18 }}>{item.icon}</span>
+                <span style={{ fontSize:14, fontWeight:500, color: item.color || '#ccc' }}>{item.label}</span>
+              </div>
+            ))}
+            <div onClick={() => setContextSession(null)} style={{
+              marginTop:6, textAlign:'center', fontSize:13, color:'#555', cursor:'pointer', padding:'8px',
+            }}>Cancel</div>
+          </div>
+        </div>
+      )}
+
+      {showTweaks && <TweaksPanel tweaks={tweaks} setTweaks={setTweaks}/>}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

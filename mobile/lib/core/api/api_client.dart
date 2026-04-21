@@ -79,10 +79,17 @@ class ApiClient {
     String deviceId, {
     String name = '',
     String command = 'bash',
+    bool useTmux = false,
+    bool tmuxSplit = false,
   }) async {
     final r = await _dio.post<Map<String, dynamic>>(
       '/api/devices/$deviceId/sessions',
-      data: {'name': name, 'command': command},
+      data: {
+        'name': name,
+        'command': command,
+        if (useTmux) 'use_tmux': true,
+        if (tmuxSplit) 'tmux_split': true,
+      },
     );
     return r.data!['session_id'] as String;
   }

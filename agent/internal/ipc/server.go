@@ -58,26 +58,50 @@ type ResizeRequest struct {
 	Rows      uint16 `json:"rows"`
 }
 
+// SpawnTmuxRequest asks the agent to create a session backed by an existing
+// tmux pane.  The CLI creates the tmux window/pane itself and passes the
+// target here so the agent can attach to it.
+type SpawnTmuxRequest struct {
+	Cmd        string `json:"cmd"`                // must be "spawn_tmux"
+	SessionID  string `json:"session_id"`
+	Name       string `json:"name,omitempty"`
+	TmuxTarget string `json:"tmux_target"`        // e.g. "main:2.0"
+	Cols       uint16 `json:"cols"`
+	Rows       uint16 `json:"rows"`
+}
+
+// InfoRequest asks the agent for metadata about a single session.
+type InfoRequest struct {
+	Cmd       string `json:"cmd"`        // must be "info"
+	SessionID string `json:"session_id"`
+}
+
 // SessionInfo pairs a session ID with its display name.
 type SessionInfo struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	TmuxBacked bool   `json:"tmux_backed,omitempty"`
+	TmuxTarget string `json:"tmux_target,omitempty"`
 }
 
 // Response is returned for every command.
 type Response struct {
-	OK       bool          `json:"ok"`
-	Error    string        `json:"error,omitempty"`
-	Sessions []SessionInfo `json:"sessions,omitempty"` // set for "list"
+	OK         bool          `json:"ok"`
+	Error      string        `json:"error,omitempty"`
+	Sessions   []SessionInfo `json:"sessions,omitempty"`   // set for "list"
+	TmuxBacked bool          `json:"tmux_backed,omitempty"` // set for "info"
+	TmuxTarget string        `json:"tmux_target,omitempty"` // set for "info"
 }
 
 // Handler dispatches incoming IPC commands.
 type Handler struct {
-	OnSpawn  func(sessionID, name, command string, cols, rows uint16, alertPatterns []string) error
-	OnKill   func(nameOrID string) error
-	OnList   func() []SessionInfo
-	OnResize func(sessionID string, cols, rows uint16) error
-	OnRename func(sessionID, name string) error
+	OnSpawn     func(sessionID, name, command string, cols, rows uint16, alertPatterns []string) error
+	OnSpawnTmux func(sessionID, name, tmuxTarget string, cols, rows uint16) error
+	OnKill      func(nameOrID string) error
+	OnList      func() []SessionInfo
+	OnInfo      func(sessionID string) (tmuxBacked bool, tmuxTarget string, err error)
+	OnResize    func(sessionID string, cols, rows uint16) error
+	OnRename    func(sessionID, name string) error
 	// OnAttach streams raw PTY I/O over conn. It must send nil on ready once the
 	// session is confirmed to exist and output streaming has started, or send an
 	// error to abort. On the error path it must NOT close conn (the IPC server
@@ -166,6 +190,61 @@ func (h *Handler) handle(conn net.Conn) {
 			resp.Error = err.Error()
 		} else {
 			resp.OK = true
+		}
+
+	case "spawn_tmux":
+		var req SpawnTmuxRequest
+		data, _ := json.Marshal(raw)
+		if err := json.Unmarshal(data, &req); err != nil {
+			resp.Error = "invalid spawn_tmux request: " + err.Error()
+			break
+		}
+		if req.SessionID == "" {
+			resp.Error = "session_id is required"
+			break
+		}
+		if req.TmuxTarget == "" {
+			resp.Error = "tmux_target is required"
+			break
+		}
+		if req.Cols == 0 {
+			req.Cols = 80
+		}
+		if req.Rows == 0 {
+			req.Rows = 24
+		}
+		if h.OnSpawnTmux == nil {
+			resp.Error = "spawn_tmux not supported"
+			break
+		}
+		if err := h.OnSpawnTmux(req.SessionID, req.Name, req.TmuxTarget, req.Cols, req.Rows); err != nil {
+			resp.Error = err.Error()
+		} else {
+			resp.OK = true
+		}
+
+	case "info":
+		var req InfoRequest
+		data, _ := json.Marshal(raw)
+		if err := json.Unmarshal(data, &req); err != nil {
+			resp.Error = "invalid info request: " + err.Error()
+			break
+		}
+		if req.SessionID == "" {
+			resp.Error = "session_id is required"
+			break
+		}
+		if h.OnInfo == nil {
+			resp.Error = "info not supported"
+			break
+		}
+		backed, target, err := h.OnInfo(req.SessionID)
+		if err != nil {
+			resp.Error = err.Error()
+		} else {
+			resp.OK = true
+			resp.TmuxBacked = backed
+			resp.TmuxTarget = target
 		}
 
 	case "list":

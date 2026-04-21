@@ -40,6 +40,9 @@ dependencies:
   # Network connectivity for WS reconnect
   connectivity_plus: ^6.0.5
 
+  # Persistent preferences (swipe gesture toggle)
+  shared_preferences: ^2.3.0
+
   # Device info for push token registration
   device_info_plus: ^10.1.2
 
@@ -52,3 +55,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/app_icon.png

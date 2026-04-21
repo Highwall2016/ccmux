@@ -32,7 +32,7 @@ type ResizeHandler func(sessionID string, cols, rows uint16)
 type KillHandler func(sessionID string)
 
 // SpawnHandler is called when the backend sends TypeSpawnSession for a device.
-type SpawnHandler func(sessionID, name, command string, cols, rows uint16, alertPatterns []string)
+type SpawnHandler func(sessionID, name, command string, cols, rows uint16, alertPatterns []string, useTmux, tmuxSplit bool)
 
 // ConnectHandler is called once after every successful TypeAuthOK handshake.
 // Use it to re-announce live sessions so the backend can reconcile its state.
@@ -278,7 +278,7 @@ func (c *Conn) handlePacket(pkt *protocol.Packet, raw []byte) {
 		if c.onSpawn != nil && pkt.Session != "" {
 			var sp protocol.SpawnSessionPayload
 			if err := msgpack.Unmarshal(pkt.Payload, &sp); err == nil {
-				c.onSpawn(sp.SessionID, sp.Name, sp.Command, sp.Cols, sp.Rows, sp.AlertPatterns)
+				c.onSpawn(sp.SessionID, sp.Name, sp.Command, sp.Cols, sp.Rows, sp.AlertPatterns, sp.UseTmux, sp.TmuxSplit)
 			}
 		}
 

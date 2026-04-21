@@ -37,6 +37,8 @@ func (a *App) handleSpawnSession(w http.ResponseWriter, r *http.Request) {
 		Cols          uint16   `json:"cols"`
 		Rows          uint16   `json:"rows"`
 		AlertPatterns []string `json:"alert_patterns,omitempty"`
+		UseTmux       bool     `json:"use_tmux,omitempty"`
+		TmuxSplit     bool     `json:"tmux_split,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
@@ -65,6 +67,8 @@ func (a *App) handleSpawnSession(w http.ResponseWriter, r *http.Request) {
 		Cols:          req.Cols,
 		Rows:          req.Rows,
 		AlertPatterns: req.AlertPatterns,
+		UseTmux:       req.UseTmux,
+		TmuxSplit:     req.TmuxSplit,
 	}
 	payload, err := msgpack.Marshal(&sp)
 	if err != nil {
@@ -119,6 +123,8 @@ func (a *App) handleListSessions(w http.ResponseWriter, r *http.Request) {
 		ExitCode     *int   `json:"exit_code,omitempty"`
 		StartedAt    string `json:"started_at"`
 		LastActivity string `json:"last_activity"`
+		TmuxBacked   bool   `json:"tmux_backed,omitempty"`
+		TmuxTarget   string `json:"tmux_target,omitempty"`
 	}
 	resp := make([]sessionResp, 0, len(sessions))
 	for _, s := range sessions {
@@ -130,6 +136,8 @@ func (a *App) handleListSessions(w http.ResponseWriter, r *http.Request) {
 			ExitCode:     s.ExitCode,
 			StartedAt:    s.StartedAt.Format(time.RFC3339),
 			LastActivity: s.LastActivity.Format(time.RFC3339),
+			TmuxBacked:   s.TmuxBacked,
+			TmuxTarget:   s.TmuxTarget,
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)

@@ -20,6 +20,8 @@ type TerminalSession struct {
 	StartedAt    time.Time
 	EndedAt      *time.Time
 	LastActivity time.Time
+	TmuxBacked   bool
+	TmuxTarget   string
 }
 
 // CreateSession inserts a new terminal session and returns its generated UUID.
@@ -41,7 +43,7 @@ func (db *DB) CreateSession(deviceID, command, name string, cols, rows int) (str
 // If the session already exists, the name is updated when the agent supplies a
 // non-empty one (e.g. on reconnect re-announce after the agent assigned a name
 // that hadn't been persisted yet).
-func (db *DB) UpsertSession(id, deviceID, command, name string, cols, rows int) error {
+func (db *DB) UpsertSession(id, deviceID, command, name string, cols, rows int, tmuxBacked bool, tmuxTarget string) error {
 	if cols == 0 {
 		cols = 80
 	}
@@ -49,11 +51,13 @@ func (db *DB) UpsertSession(id, deviceID, command, name string, cols, rows int) 
 		rows = 24
 	}
 	_, err := db.Exec(
-		`INSERT INTO terminal_sessions (id, device_id, command, name, cols, rows)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO terminal_sessions (id, device_id, command, name, cols, rows, tmux_backed, tmux_target)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 ON CONFLICT (id) DO UPDATE
-		   SET name = CASE WHEN EXCLUDED.name != '' THEN EXCLUDED.name ELSE terminal_sessions.name END`,
-		id, deviceID, command, name, cols, rows,
+		   SET name        = CASE WHEN EXCLUDED.name != '' THEN EXCLUDED.name ELSE terminal_sessions.name END,
+		       tmux_backed = EXCLUDED.tmux_backed,
+		       tmux_target = EXCLUDED.tmux_target`,
+		id, deviceID, command, name, cols, rows, tmuxBacked, tmuxTarget,
 	)
 	return err
 }
@@ -63,11 +67,11 @@ func (db *DB) GetSessionByID(id string) (*TerminalSession, error) {
 	s := &TerminalSession{}
 	err := db.QueryRow(
 		`SELECT id, device_id, name, command, status, exit_code, cols, rows,
-		        started_at, ended_at, last_activity
+		        started_at, ended_at, last_activity, tmux_backed, COALESCE(tmux_target,'')
 		 FROM terminal_sessions WHERE id = $1`,
 		id,
 	).Scan(&s.ID, &s.DeviceID, &s.Name, &s.Command, &s.Status, &s.ExitCode,
-		&s.Cols, &s.Rows, &s.StartedAt, &s.EndedAt, &s.LastActivity)
+		&s.Cols, &s.Rows, &s.StartedAt, &s.EndedAt, &s.LastActivity, &s.TmuxBacked, &s.TmuxTarget)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -81,7 +85,7 @@ func (db *DB) GetSessionByID(id string) (*TerminalSession, error) {
 func (db *DB) ListSessionsByDevice(deviceID string) ([]*TerminalSession, error) {
 	rows, err := db.Query(
 		`SELECT id, device_id, name, command, status, exit_code, cols, rows,
-		        started_at, ended_at, last_activity
+		        started_at, ended_at, last_activity, tmux_backed, COALESCE(tmux_target,'')
 		 FROM terminal_sessions WHERE device_id = $1 AND status = 'active'
 		 ORDER BY started_at DESC`,
 		deviceID,
@@ -95,7 +99,7 @@ func (db *DB) ListSessionsByDevice(deviceID string) ([]*TerminalSession, error) 
 	for rows.Next() {
 		s := &TerminalSession{}
 		if err := rows.Scan(&s.ID, &s.DeviceID, &s.Name, &s.Command, &s.Status, &s.ExitCode,
-			&s.Cols, &s.Rows, &s.StartedAt, &s.EndedAt, &s.LastActivity); err != nil {
+			&s.Cols, &s.Rows, &s.StartedAt, &s.EndedAt, &s.LastActivity, &s.TmuxBacked, &s.TmuxTarget); err != nil {
 			return nil, err
 		}
 		sessions = append(sessions, s)
@@ -152,14 +156,16 @@ func (db *DB) ReactivateSession(id string) error {
 	return err
 }
 
-// MarkDeviceSessionsExited marks all "active" sessions for a device as exited
-// (exit_code = -1).  Called when the device agent (re-)connects so that stale
-// sessions from a previous agent run are cleaned up before the agent
-// re-announces its currently live sessions.
+// MarkDeviceSessionsExited marks all "active" non-tmux sessions for a device as
+// exited (exit_code = -1).  Called when the device agent (re-)connects so that
+// stale sessions from a previous agent run are cleaned up before the agent
+// re-announces its currently live sessions.  Tmux-backed sessions are skipped
+// because their underlying tmux panes survive agent restarts; DiscoverAndRegister
+// will re-attach to them and re-announce as "active".
 func (db *DB) MarkDeviceSessionsExited(deviceID string) error {
 	_, err := db.Exec(
 		`UPDATE terminal_sessions SET status='exited', exit_code=-1, ended_at=NOW()
-		 WHERE device_id=$1 AND status='active'`,
+		 WHERE device_id=$1 AND status='active' AND tmux_backed = FALSE`,
 		deviceID,
 	)
 	return err

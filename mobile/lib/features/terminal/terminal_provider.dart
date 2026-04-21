@@ -9,6 +9,7 @@ import 'package:xterm/xterm.dart';
 import '../../core/protocol/packet.dart';
 import '../../core/websocket/ws_client.dart';
 import '../../core/websocket/ws_reconnect.dart';
+import 'modifier_provider.dart';
 
 /// Per-session state.
 class TerminalSessionState {
@@ -24,6 +25,9 @@ class TerminalSessionState {
   final String status; // active | exited | killed
   final int? exitCode;
   final bool hasNewOutput;
+  /// True when the session is backed by a running tmux pane.
+  /// Drives tmux-specific UI: Ctrl+B toolbar button, swipe gestures, window tabs.
+  final bool tmuxBacked;
 
   TerminalSessionState({
     required this.id,
@@ -32,6 +36,7 @@ class TerminalSessionState {
     this.status = 'active',
     this.exitCode,
     this.hasNewOutput = false,
+    this.tmuxBacked = false,
   }) : _name = (name != null && name.isNotEmpty) ? name : null;
 
   TerminalSessionState copyWith({
@@ -39,6 +44,7 @@ class TerminalSessionState {
     String? status,
     int? exitCode,
     bool? hasNewOutput,
+    bool? tmuxBacked,
   }) =>
       TerminalSessionState(
         id:           id,
@@ -47,6 +53,7 @@ class TerminalSessionState {
         status:       status       ?? this.status,
         exitCode:     exitCode     ?? this.exitCode,
         hasNewOutput: hasNewOutput ?? this.hasNewOutput,
+        tmuxBacked:   tmuxBacked   ?? this.tmuxBacked,
       );
 }
 
@@ -55,6 +62,11 @@ class TerminalState {
   final String? activeSessionId;
 
   const TerminalState({this.sessions = const {}, this.activeSessionId});
+
+  /// Whether the currently active session is tmux-backed.
+  bool get activeTmuxBacked => activeSessionId != null
+      ? (sessions[activeSessionId]?.tmuxBacked ?? false)
+      : false;
 
   TerminalState copyWith({
     Map<String, TerminalSessionState>? sessions,
@@ -91,7 +103,7 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
   }
 
   /// Subscribe to a session and create a [Terminal] for it.
-  void openSession(String sessionId, {String name = ''}) {
+  void openSession(String sessionId, {String name = '', bool tmuxBacked = false}) {
     final current = state.valueOrNull ?? const TerminalState();
     if (current.sessions.containsKey(sessionId)) {
       state = AsyncValue.data(current.copyWith(activeSessionId: sessionId));
@@ -101,6 +113,21 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
     final terminal = Terminal(
       maxLines: 10000,
       onOutput: (data) {
+        final modifier = ref.read(modifierProvider);
+        if (modifier != ArmedModifier.none) {
+          ref.read(modifierProvider.notifier).state = ArmedModifier.none;
+          final bytes = utf8.encode(data);
+          final out = <int>[];
+          for (final b in bytes) {
+            if (modifier == ArmedModifier.ctrl) {
+              out.add(b & 0x1F);
+            } else {
+              out.addAll([0x1B, b]);
+            }
+          }
+          sendInput(sessionId, Uint8List.fromList(out));
+          return;
+        }
         sendInput(sessionId, Uint8List.fromList(utf8.encode(data)));
       },
       onResize: (cols, rows, pixelWidth, pixelHeight) {
@@ -112,6 +139,7 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
       id: sessionId,
       name: name.isNotEmpty ? name : sessionId.substring(0, 8),
       terminal: terminal,
+      tmuxBacked: tmuxBacked,
     );
 
     state = AsyncValue.data(TerminalState(
@@ -185,7 +213,11 @@ class TerminalNotifier extends AsyncNotifier<TerminalState> {
     final sess = current.sessions[sessionId];
     if (sess == null) return;
 
-    sess.terminal.write(utf8.decode(payload, allowMalformed: true));
+    try {
+      sess.terminal.write(utf8.decode(payload, allowMalformed: true));
+    } catch (_) {
+      return;
+    }
 
     final isActive = sessionId == current.activeSessionId;
     if (!isActive) {

@@ -82,7 +82,19 @@ type Manager struct {
 	// defaultAlertPatterns).  Keys are session IDs.
 	extraPatterns   map[string][][]byte
 	extraPatternsMu sync.RWMutex
+
+	// tmuxTargets maps session ID → tmux target string for tmux-backed sessions.
+	tmuxTargets   map[string]string
+	tmuxTargetsMu sync.RWMutex
+
+	// killedTargets records tmux targets killed via Kill(), with the kill time.
+	// reconcile checks this to avoid re-registering a pane immediately after kill.
+	// Entries expire after killedTargetTTL; no explicit cleanup needed for typical use.
+	killedTargets   map[string]time.Time
+	killedTargetsMu sync.RWMutex
 }
+
+const killedTargetTTL = 60 * time.Second
 
 // NewManager creates a Manager.
 func NewManager(shell string, onOutput OutputFunc, onExit StatusFunc, onAlert AlertFunc) *Manager {
@@ -96,6 +108,8 @@ func NewManager(shell string, onOutput OutputFunc, onExit StatusFunc, onAlert Al
 		alertAt:       make(map[string]time.Time),
 		consumers:     make(map[string][]*localConsumer),
 		extraPatterns: make(map[string][][]byte),
+		tmuxTargets:   make(map[string]string),
+		killedTargets: make(map[string]time.Time),
 	}
 }
 
@@ -240,6 +254,9 @@ func (m *Manager) Spawn(id, name, command string, cols, rows uint16) error {
 		m.namesMu.Lock()
 		delete(m.names, id)
 		m.namesMu.Unlock()
+		m.tmuxTargetsMu.Lock()
+		delete(m.tmuxTargets, id)
+		m.tmuxTargetsMu.Unlock()
 		sess.Close()
 		// Only fire onExit for natural exits.  When Kill() removed the session
 		// first, the backend was already notified "killed" by the REST handler.
@@ -306,9 +323,78 @@ func (m *Manager) Kill(nameOrID string) error {
 	m.namesMu.Lock()
 	delete(m.names, id)
 	m.namesMu.Unlock()
+	// Record the tmux target before removing it so reconcile can skip the pane.
+	m.tmuxTargetsMu.Lock()
+	if target := m.tmuxTargets[id]; target != "" {
+		m.killedTargetsMu.Lock()
+		m.killedTargets[target] = time.Now()
+		m.killedTargetsMu.Unlock()
+	}
+	delete(m.tmuxTargets, id)
+	m.tmuxTargetsMu.Unlock()
 	sess.Kill()
 	sess.Close()
 	return nil
+}
+
+// WasTargetKilled returns true when the given tmux target was killed within
+// killedTargetTTL.  Used by reconcile to skip re-registering a pane that the
+// user just killed.
+func (m *Manager) WasTargetKilled(target string) bool {
+	m.killedTargetsMu.RLock()
+	t, ok := m.killedTargets[target]
+	m.killedTargetsMu.RUnlock()
+	return ok && time.Since(t) < killedTargetTTL
+}
+
+// HasSession returns true when the session ID is currently tracked.
+func (m *Manager) HasSession(id string) bool {
+	m.mu.RLock()
+	_, ok := m.sessions[id]
+	m.mu.RUnlock()
+	return ok
+}
+
+// SpawnTmux creates a ccmux session that wraps a running tmux pane by
+// spawning "tmux attach-session -t <tmuxTarget>" as the PTY command.
+// The session's tmux target is stored so TmuxTargetOf can return it later.
+func (m *Manager) SpawnTmux(id, name, tmuxTarget string, cols, rows uint16) error {
+	command := fmt.Sprintf("tmux attach-session -t '%s'", tmuxTarget)
+	if err := m.Spawn(id, name, command, cols, rows); err != nil {
+		return err
+	}
+	m.tmuxTargetsMu.Lock()
+	m.tmuxTargets[id] = tmuxTarget
+	m.tmuxTargetsMu.Unlock()
+	return nil
+}
+
+// TmuxTargetOf returns the tmux target string for a tmux-backed session,
+// or an empty string if the session is not tmux-backed.
+func (m *Manager) TmuxTargetOf(id string) string {
+	m.tmuxTargetsMu.RLock()
+	defer m.tmuxTargetsMu.RUnlock()
+	return m.tmuxTargets[id]
+}
+
+// TmuxSessions returns infos for all currently managed tmux-backed sessions.
+func (m *Manager) TmuxSessions() []SessionInfo {
+	m.tmuxTargetsMu.RLock()
+	ids := make([]string, 0, len(m.tmuxTargets))
+	for id := range m.tmuxTargets {
+		ids = append(ids, id)
+	}
+	m.tmuxTargetsMu.RUnlock()
+
+	m.namesMu.RLock()
+	infos := make([]SessionInfo, 0, len(ids))
+	for _, id := range ids {
+		if name, ok := m.names[id]; ok {
+			infos = append(infos, SessionInfo{ID: id, Name: name})
+		}
+	}
+	m.namesMu.RUnlock()
+	return infos
 }
 
 // List returns info for all active sessions.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"time"
 
 	"github.com/ccmux/agent/internal/auth"
 )
@@ -22,17 +23,25 @@ type Config struct {
 	IPCSocket string
 	// DefaultShell is the shell to use when spawning sessions.
 	DefaultShell string
+	// TmuxWatchInterval is how often the agent polls for new/gone tmux panes.
+	// Set to 0 to disable tmux auto-discovery.
+	TmuxWatchInterval time.Duration
 }
 
 // Load reads configuration from environment variables first, then falls back
 // to ~/.ccmux/credentials.json for any values that are still missing.
 func Load() (*Config, error) {
+	var watchInterval time.Duration
+	if s := os.Getenv("CCMUX_TMUX_WATCH"); s != "" {
+		watchInterval, _ = time.ParseDuration(s)
+	}
 	cfg := &Config{
-		ServerURL:    os.Getenv("CCMUX_SERVER_URL"),
-		DeviceID:     os.Getenv("CCMUX_DEVICE_ID"),
-		DeviceToken:  os.Getenv("CCMUX_DEVICE_TOKEN"),
-		IPCSocket:    os.Getenv("CCMUX_IPC_SOCKET"),
-		DefaultShell: os.Getenv("CCMUX_SHELL"),
+		ServerURL:         os.Getenv("CCMUX_SERVER_URL"),
+		DeviceID:          os.Getenv("CCMUX_DEVICE_ID"),
+		DeviceToken:       os.Getenv("CCMUX_DEVICE_TOKEN"),
+		IPCSocket:         os.Getenv("CCMUX_IPC_SOCKET"),
+		DefaultShell:      os.Getenv("CCMUX_SHELL"),
+		TmuxWatchInterval: watchInterval,
 	}
 
 	// Fill missing values from the credentials file.
@@ -65,6 +74,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.DefaultShell == "" {
 		cfg.DefaultShell = loginShell()
+	}
+	if cfg.TmuxWatchInterval == 0 {
+		cfg.TmuxWatchInterval = 5 * time.Second
 	}
 	return cfg, nil
 }

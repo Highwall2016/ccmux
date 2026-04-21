@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:messagepack/messagepack.dart';
 import '../../core/api/api_client.dart';
@@ -11,12 +13,16 @@ class WorkspaceState {
   final Map<String, List<SessionModel>> sessionsByDevice;
   final bool loading;
   final String? error;
+  /// Latest tmux topology keyed by device ID.  Null when no TypeTmuxTree has
+  /// been received yet or tmux is not running on that device.
+  final Map<String, TmuxTree> tmuxTreeByDevice;
 
   const WorkspaceState({
     this.devices = const [],
     this.sessionsByDevice = const {},
     this.loading = false,
     this.error,
+    this.tmuxTreeByDevice = const {},
   });
 
   WorkspaceState copyWith({
@@ -24,21 +30,24 @@ class WorkspaceState {
     Map<String, List<SessionModel>>? sessionsByDevice,
     bool? loading,
     String? error,
+    Map<String, TmuxTree>? tmuxTreeByDevice,
   }) =>
       WorkspaceState(
         devices:           devices           ?? this.devices,
         sessionsByDevice:  sessionsByDevice  ?? this.sessionsByDevice,
         loading:           loading           ?? this.loading,
         error:             error,
+        tmuxTreeByDevice:  tmuxTreeByDevice  ?? this.tmuxTreeByDevice,
       );
 }
 
 class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
   @override
   Future<WorkspaceState> build() async {
-    // Listen for real-time session status changes from the WS.
+    // Listen for real-time packets from the WS.
     final ws = ref.watch(wsClientProvider);
     ws.packets.where((p) => p.type == typeSessionStatus).listen(_onSessionStatus);
+    ws.packets.where((p) => p.type == typeTmuxTree).listen(_onTmuxTree);
     return _fetchAll();
   }
 
@@ -74,9 +83,12 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
     String deviceId, {
     String name = '',
     String command = 'bash',
+    bool useTmux = false,
+    bool tmuxSplit = false,
   }) async {
     final api = ref.read(apiClientProvider);
-    final sessionId = await api.spawnSession(deviceId, name: name, command: command);
+    final sessionId = await api.spawnSession(deviceId,
+        name: name, command: command, useTmux: useTmux, tmuxSplit: tmuxSplit);
     // Optimistically insert the new session so the WS "active" event finds it
     // via _patchSession instead of falling through to refresh(), which would
     // rebuild the drawer while it is animating out and cause a use-after-dispose crash.
@@ -90,6 +102,7 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
         status: 'active',
         startedAt: now,
         lastActivity: now,
+        tmuxBacked: useTmux,
       ),
     );
     return sessionId;
@@ -114,6 +127,8 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
     String sessionId, {
     String? status,
     String? name,
+    bool? tmuxBacked,
+    String? tmuxTarget,
   }) {
     final current = state.valueOrNull;
     if (current == null) return;
@@ -127,12 +142,14 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
     final old = sessionsForDevice[idx];
     final updated = SessionModel(
       id:           old.id,
-      name:         name   ?? old.name,
+      name:         name        ?? old.name,
       command:      old.command,
-      status:       status ?? old.status,
+      status:       status      ?? old.status,
       exitCode:     old.exitCode,
       startedAt:    old.startedAt,
       lastActivity: old.lastActivity,
+      tmuxBacked:   tmuxBacked  ?? old.tmuxBacked,
+      tmuxTarget:   tmuxTarget  ?? old.tmuxTarget,
     );
 
     final newList = List<SessionModel>.from(sessionsForDevice);
@@ -142,6 +159,20 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
       sessionsByDevice: {
         ...current.sessionsByDevice,
         deviceId: newList,
+      },
+    ));
+  }
+
+  /// Removes an already-ended session from local state (no API call needed).
+  void removeEndedSession(String deviceId, String sessionId) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    final sessions = current.sessionsByDevice[deviceId];
+    if (sessions == null) return;
+    state = AsyncValue.data(current.copyWith(
+      sessionsByDevice: {
+        ...current.sessionsByDevice,
+        deviceId: sessions.where((s) => s.id != sessionId).toList(),
       },
     ));
   }
@@ -171,19 +202,22 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
 
   void _onSessionStatus(Packet pkt) {
     if (pkt.payload == null) return;
-    String? id, status, name;
+    String? id, status, name, tmuxTarget;
+    bool tmuxBacked = false;
     try {
       final u = Unpacker.fromList(pkt.payload!);
       final mapLen = u.unpackMapLength();
       for (int i = 0; i < mapLen; i++) {
         final k = u.unpackString()!;
         switch (k) {
-          case 'id':        id     = u.unpackString();
-          case 'status':    status = u.unpackString();
-          case 'name':      name   = u.unpackString();
+          case 'id':           id          = u.unpackString();
+          case 'status':       status      = u.unpackString();
+          case 'name':         name        = u.unpackString();
+          case 'tmux_target':  tmuxTarget  = u.unpackString();
+          case 'tmux_backed':  tmuxBacked  = u.unpackBool() ?? false;
           // Consume known non-string fields so the unpacker stays in sync.
-          case 'exit_code': u.unpackInt();
-          default:          u.unpackString(); // cmd is a string
+          case 'exit_code':    u.unpackInt();
+          default:             u.unpackString(); // cmd is a string
         }
       }
     } catch (_) {
@@ -205,12 +239,14 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
         final newList = List<SessionModel>.from(entry.value);
         newList[idx] = SessionModel(
           id:           old.id,
-          name:         name ?? old.name,
+          name:         name        ?? old.name,
           command:      old.command,
           status:       status,
           exitCode:     old.exitCode,
           startedAt:    old.startedAt,
           lastActivity: old.lastActivity,
+          tmuxBacked:   tmuxBacked  || old.tmuxBacked,
+          tmuxTarget:   (tmuxTarget != null && tmuxTarget.isNotEmpty) ? tmuxTarget : old.tmuxTarget,
         );
         updated[entry.key] = newList;
         break;
@@ -224,7 +260,109 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
       refresh();
     }
   }
+
+  /// Handles a TypeTmuxTree packet, updating the tmux topology for its device.
+  void _onTmuxTree(Packet pkt) {
+    final payload = pkt.payload;
+    if (payload == null) return;
+    try {
+      final u = Unpacker.fromList(payload);
+      final mapLen = u.unpackMapLength();
+      String deviceId = '';
+      final sessionNodes = <TmuxSessionNode>[];
+
+      for (int i = 0; i < mapLen; i++) {
+        final k = u.unpackString()!;
+        if (k == 'device_id') {
+          deviceId = u.unpackString() ?? '';
+        } else if (k == 'sessions') {
+          final sessCount = u.unpackListLength();
+          for (int s = 0; s < sessCount; s++) {
+            final sm = u.unpackMapLength();
+            String sessName = '';
+            final windows = <TmuxWindowNode>[];
+            for (int sf = 0; sf < sm; sf++) {
+              final sk = u.unpackString()!;
+              if (sk == 'name') {
+                sessName = u.unpackString() ?? '';
+              } else if (sk == 'windows') {
+                final winCount = u.unpackListLength();
+                for (int w = 0; w < winCount; w++) {
+                  final wm = u.unpackMapLength();
+                  int winIndex = 0;
+                  String winName = '';
+                  final panes = <TmuxPaneNode>[];
+                  for (int wf = 0; wf < wm; wf++) {
+                    final wk = u.unpackString()!;
+                    if (wk == 'index') {
+                      winIndex = u.unpackInt() ?? 0;
+                    } else if (wk == 'name') {
+                      winName = u.unpackString() ?? '';
+                    } else if (wk == 'panes') {
+                      final paneCount = u.unpackListLength();
+                      for (int p = 0; p < paneCount; p++) {
+                        final pm = u.unpackMapLength();
+                        int _paneIndex = 0;
+                        String ccmuxId = '';
+                        String title = '';
+                        bool active = false;
+                        for (int pf = 0; pf < pm; pf++) {
+                          final pk = u.unpackString()!;
+                          if (pk == 'index') {
+                            _paneIndex = u.unpackInt() ?? 0;
+                          } else if (pk == 'id') {
+                            ccmuxId = u.unpackString() ?? '';
+                          } else if (pk == 'title') {
+                            title = u.unpackString() ?? '';
+                          } else if (pk == 'active') {
+                            active = u.unpackBool() ?? false;
+                          } else {
+                            u.unpackString();
+                          }
+                        }
+                        if (ccmuxId.isNotEmpty) {
+                          panes.add(TmuxPaneNode(
+                            ccmuxId: ccmuxId,
+                            title: title,
+                            active: active,
+                          ));
+                        }
+                      }
+                    } else {
+                      u.unpackString();
+                    }
+                  }
+                  windows.add(TmuxWindowNode(index: winIndex, name: winName, panes: panes));
+                }
+              } else {
+                u.unpackString();
+              }
+            }
+            sessionNodes.add(TmuxSessionNode(name: sessName, windows: windows));
+          }
+        } else {
+          u.unpackString();
+        }
+      }
+
+      if (deviceId.isEmpty) return;
+      final tree = TmuxTree(deviceId: deviceId, sessions: sessionNodes);
+      final current = state.valueOrNull;
+      if (current == null) return;
+      state = AsyncValue.data(current.copyWith(
+        tmuxTreeByDevice: {
+          ...current.tmuxTreeByDevice,
+          deviceId: tree,
+        },
+      ));
+    } catch (_) {
+      // Malformed TmuxTree packet — ignore.
+    }
+  }
 }
 
 final workspaceProvider =
     AsyncNotifierProvider<WorkspaceNotifier, WorkspaceState>(() => WorkspaceNotifier());
+
+/// Tracks which device is shown in the session list. Null = first device.
+final selectedDeviceIdProvider = StateProvider<String?>((ref) => null);

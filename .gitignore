@@ -64,3 +64,4 @@ firebase-key.json
 
 # Logs
 *.log
+.gstack/

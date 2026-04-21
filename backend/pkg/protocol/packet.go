@@ -20,6 +20,7 @@ const (
 	TypeAuthFail       = uint8(0x22)
 	TypeSubscribe      = uint8(0x30)
 	TypeUnsubscribe    = uint8(0x31)
+	TypeTmuxTree       = uint8(0x32) // agent → backend → clients: tmux pane hierarchy
 	TypePing           = uint8(0xFF)
 	TypePong           = uint8(0xFE)
 )
@@ -39,11 +40,13 @@ type ResizePayload struct {
 
 // SessionStatusPayload is used with TypeSessionStatus.
 type SessionStatusPayload struct {
-	SessionID string `msgpack:"id"`
-	Status    string `msgpack:"status"` // active | exited | killed
-	ExitCode  *int   `msgpack:"exit_code,omitempty"`
-	Name      string `msgpack:"name,omitempty"`
-	Command   string `msgpack:"cmd,omitempty"`
+	SessionID  string `msgpack:"id"`
+	Status     string `msgpack:"status"` // active | exited | killed
+	ExitCode   *int   `msgpack:"exit_code,omitempty"`
+	Name       string `msgpack:"name,omitempty"`
+	Command    string `msgpack:"cmd,omitempty"`
+	TmuxBacked bool   `msgpack:"tmux_backed,omitempty"`
+	TmuxTarget string `msgpack:"tmux_target,omitempty"`
 }
 
 // RenamePayload is used with TypeRenameSession.
@@ -66,6 +69,36 @@ type SpawnSessionPayload struct {
 	Cols          uint16   `msgpack:"cols"`
 	Rows          uint16   `msgpack:"rows"`
 	AlertPatterns []string `msgpack:"patterns,omitempty"`
+	UseTmux       bool     `msgpack:"use_tmux,omitempty"`
+	TmuxSplit     bool     `msgpack:"tmux_split,omitempty"` // split pane instead of new window
+}
+
+// TmuxTreePayload is used with TypeTmuxTree.
+// Sent by the agent whenever the tmux topology changes.
+type TmuxTreePayload struct {
+	DeviceID string           `msgpack:"device_id"`
+	Sessions []TmuxSessionTree `msgpack:"sessions"`
+}
+
+// TmuxSessionTree is one tmux session with its windows.
+type TmuxSessionTree struct {
+	Name    string           `msgpack:"name"`
+	Windows []TmuxWindowTree `msgpack:"windows"`
+}
+
+// TmuxWindowTree is one tmux window with its panes.
+type TmuxWindowTree struct {
+	Index int            `msgpack:"index"`
+	Name  string         `msgpack:"name"`
+	Panes []TmuxPaneTree `msgpack:"panes"`
+}
+
+// TmuxPaneTree is one tmux pane mapped to a ccmux session ID.
+type TmuxPaneTree struct {
+	Index    int    `msgpack:"index"`
+	CcmuxID  string `msgpack:"id"`    // ccmux session UUID for this pane
+	Title    string `msgpack:"title"`
+	Active   bool   `msgpack:"active"` // currently focused pane in the window
 }
 
 // SubscribePayload is used with TypeSubscribe.

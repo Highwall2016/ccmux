@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../workspace/workspace_drawer.dart';
+import 'package:go_router/go_router.dart';
+import '../../core/theme.dart';
 import 'terminal_provider.dart';
-import 'tab_panel.dart';
 import 'terminal_view.dart' as tv;
 import 'special_key_toolbar.dart';
+import 'tmux_window_tabs.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class TerminalPage extends ConsumerWidget {
   const TerminalPage({super.key});
@@ -13,55 +16,83 @@ class TerminalPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final termState = ref.watch(terminalProvider).valueOrNull;
     final activeId  = termState?.activeSessionId;
+    final sess      = activeId != null ? termState!.sessions[activeId] : null;
+
+    if (activeId == null || sess == null) {
+      return Scaffold(
+        backgroundColor: CcmuxColors.bg,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildNavBar(context, ref, null, null),
+              const Expanded(
+                child: Center(
+                  child: Text('No session selected',
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 13,
+                        color: CcmuxColors.textDim,
+                      )),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
-      backgroundColor: Colors.black,
-      drawer: const WorkspaceDrawer(),
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        titleTextStyle: const TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 14,
-          color: Colors.white70,
+      backgroundColor: CcmuxColors.bgDark,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildNavBar(context, ref, activeId, sess),
+            Expanded(child: tv.TerminalView(sessionId: activeId)),
+            SpecialKeyToolbar(sessionId: activeId),
+            TmuxWindowTabs(sessionId: activeId),
+          ],
         ),
-        title: Text(activeId != null
-            ? 'session: ${termState!.sessions[activeId]?.name ?? activeId.substring(0, 8)}'
-            : 'ccmux'),
-        actions: [
-          if (termState != null && termState.sessions.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Center(
-                child: Text('Open the drawer to pick a session',
-                    style: TextStyle(color: Colors.white38, fontSize: 12)),
-              ),
-            ),
-        ],
       ),
-      body: Column(
+    );
+  }
+
+  Widget _buildNavBar(
+    BuildContext context,
+    WidgetRef ref,
+    String? sessionId,
+    TerminalSessionState? sess,
+  ) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      decoration: const BoxDecoration(
+        color: CcmuxColors.bg,
+        border: Border(bottom: BorderSide(color: CcmuxColors.divider)),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          // Session tabs.
-          const TabPanel(),
-          // Terminal output area.
-          Expanded(
-            child: activeId != null
-                ? tv.TerminalView(sessionId: activeId)
-                : const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.terminal, size: 64, color: Colors.white24),
-                        SizedBox(height: 16),
-                        Text('Swipe right or tap ☰ to open the workspace drawer',
-                            style: TextStyle(color: Colors.white38),
-                            textAlign: TextAlign.center),
-                      ],
-                    ),
-                  ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 48),
+            child: Text(
+              sess?.name ?? '',
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: CcmuxColors.text,
+                letterSpacing: -0.3,
+              ),
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-          // Special keys toolbar.
-          SpecialKeyToolbar(sessionId: activeId),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: GestureDetector(
+              onTap: () => context.go('/sessions'),
+              child: const Icon(Icons.chevron_left, color: CcmuxColors.accent, size: 22),
+            ),
+          ),
         ],
       ),
     );

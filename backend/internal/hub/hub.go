@@ -20,9 +20,10 @@ const (
 
 // Hub routes packets between agent connections and client connections.
 type Hub struct {
-	agents map[string]*AgentConn    // deviceID → conn
-	subs   map[string][]*ClientConn // sessionID → []conn
-	mu     sync.RWMutex
+	agents     map[string]*AgentConn    // deviceID → conn
+	subs       map[string][]*ClientConn // sessionID → []conn
+	deviceSubs map[string]map[*ClientConn]struct{} // deviceID → set of subscribed clients
+	mu         sync.RWMutex
 
 	redis         *redis.Client
 	multiInstance bool // enables Redis pub/sub cross-replica routing
@@ -33,6 +34,7 @@ func New(redisClient *redis.Client, multiInstance bool) *Hub {
 	return &Hub{
 		agents:        make(map[string]*AgentConn),
 		subs:          make(map[string][]*ClientConn),
+		deviceSubs:    make(map[string]map[*ClientConn]struct{}),
 		redis:         redisClient,
 		multiInstance: multiInstance,
 	}
@@ -55,10 +57,42 @@ func (h *Hub) UnregisterAgent(deviceID string) {
 }
 
 // Subscribe subscribes a client connection to a session's output.
-func (h *Hub) Subscribe(sessionID string, conn *ClientConn) {
+// deviceID is used to track which device this client is watching so that
+// BroadcastToDevice can reach it for device-level packets (e.g. TypeTmuxTree).
+func (h *Hub) Subscribe(sessionID, deviceID string, conn *ClientConn) {
 	h.mu.Lock()
 	h.subs[sessionID] = append(h.subs[sessionID], conn)
+	if deviceID != "" {
+		if h.deviceSubs[deviceID] == nil {
+			h.deviceSubs[deviceID] = make(map[*ClientConn]struct{})
+		}
+		h.deviceSubs[deviceID][conn] = struct{}{}
+	}
 	h.mu.Unlock()
+}
+
+// CleanupConn removes all device-level subscription records for a connection.
+// Call after unsubscribing all sessions when the client connection closes.
+func (h *Hub) CleanupConn(conn *ClientConn) {
+	h.mu.Lock()
+	for deviceID, conns := range h.deviceSubs {
+		delete(conns, conn)
+		if len(conns) == 0 {
+			delete(h.deviceSubs, deviceID)
+		}
+	}
+	h.mu.Unlock()
+}
+
+// BroadcastToDevice sends pkt to every client currently subscribed to any
+// session belonging to deviceID.  Used for device-scoped packets like TypeTmuxTree.
+func (h *Hub) BroadcastToDevice(deviceID string, pkt []byte) {
+	h.mu.RLock()
+	clients := h.deviceSubs[deviceID]
+	h.mu.RUnlock()
+	for conn := range clients {
+		conn.send(pkt)
+	}
 }
 
 // Unsubscribe removes a client connection from a session.

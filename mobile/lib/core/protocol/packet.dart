@@ -15,6 +15,7 @@ const int typeAuthOK         = 0x21;
 const int typeAuthFail       = 0x22;
 const int typeSubscribe      = 0x30;
 const int typeUnsubscribe    = 0x31;
+const int typeTmuxTree       = 0x32; // agent → backend → clients: tmux pane hierarchy
 const int typePing           = 0xFF;
 const int typePong           = 0xFE;
 

@@ -29,13 +29,15 @@ No tmux required. Install the agent on any Mac, start sessions, then monitor and
              ▼
 ┌─────────────────────────────┐
 │  Mobile app (Flutter)       │
-│  ├── workspace drawer       │
-│  ├── session tabs           │
+│  ├── session list (home)    │
+│  ├── device switcher        │
 │  └── full interactive term  │
 └─────────────────────────────┘
 ```
 
 **Hot path is zero-I/O:** PTY output is batched in 16 ms windows, forwarded over WebSocket through the backend's in-memory hub, and rendered by the app. No database or Redis on the critical path.
+
+**tmux-aware:** When tmux is running on the computer, the agent auto-discovers all panes and registers them as ccmux sessions. The workspace drawer shows the full tmux session → window → pane hierarchy. The terminal view gains a window tab bar, a Ctrl+B button with common shortcuts, and an optional swipe-to-switch-window gesture.
 
 ---
 
@@ -99,6 +101,12 @@ The agent connects to the backend over WebSocket and listens for IPC commands on
 # Start a session running a specific command
 ./bin/ccmux new --name build make test
 
+# Open a new tmux window (requires tmux running on the computer)
+./bin/ccmux new --tmux --name logs tail -f /var/log/app.log
+
+# Split the active tmux pane instead of creating a new window
+./bin/ccmux new --tmux --tmux-split --name watch htop
+
 # List active sessions
 ./bin/ccmux list
 # → work (a3f2…)
@@ -123,9 +131,10 @@ flutter run
 ```
 
 - Sign in with the dev account (`dev@ccmux.local` / `devpassword123` by default)
-- Swipe right or tap ☰ to open the workspace drawer
-- Tap any session to open it as an interactive terminal tab
-- The bottom toolbar provides: Tab, Esc, Ctrl+C, Ctrl+D, Ctrl+Z, Ctrl+L, arrow keys, PgUp/PgDn
+- The session list opens automatically — tap any session to enter its terminal
+- Tap the device name at the top to switch between registered devices
+- Tap **+** to spawn a new session on the selected device
+- The toolbar provides: Tab, Esc, Ctrl, Alt, Ctrl+C, arrow keys, PgUp/PgDn
 
 ---
 
@@ -160,13 +169,14 @@ Environment variables the agent reads:
 | `CCMUX_DEVICE_ID` | — | UUID assigned at device registration |
 | `CCMUX_DEVICE_TOKEN` | — | HMAC-signed token for agent auth |
 | `CCMUX_IPC_SOCKET` | `/tmp/ccmux.sock` | Unix socket path for the CLI |
+| `CCMUX_TMUX_DISCOVER` | `true` | Auto-discover and register tmux panes on startup and every 10 s. Set to `false` to disable. |
 
 ---
 
 ## CLI reference
 
 ```
-ccmux new [--name NAME] [--cols N] [--rows N] [--patterns P1,P2] [COMMAND...]
+ccmux new [--name NAME] [--cols N] [--rows N] [--patterns P1,P2] [--tmux] [--tmux-split] [COMMAND...]
 ccmux kill NAME|UUID
 ccmux list
 ccmux attach UUID
@@ -179,6 +189,8 @@ ccmux rename UUID NEWNAME
 | `--cols` | Terminal width. Auto-detected from the current terminal when omitted. |
 | `--rows` | Terminal height. Auto-detected from the current terminal when omitted. |
 | `--patterns` | Comma-separated alert patterns that trigger a push notification when matched in output. Defaults include `error`, `failed`, `panic`, `fatal`, `esc to cancel`, `do you want`, `would you like`, `are you sure`. |
+| `--tmux` | Create the session as a new tmux window in the running tmux server instead of a bare PTY. |
+| `--tmux-split` | Like `--tmux` but splits the active pane instead of opening a new window. |
 
 `COMMAND` defaults to `bash` when omitted.
 
@@ -186,22 +198,33 @@ ccmux rename UUID NEWNAME
 
 ## Mobile app overview
 
-### Workspace drawer (swipe right or tap ☰)
-- Lists all registered devices and their active sessions
-- Tap a session to open it as a tab
-- Long-press or tap ⋮ to rename or kill a session from the app
-
-### Session tabs
-- Each open session gets a tab at the top
-- Blue dot on inactive tabs indicates new output
-- Red × button closes the local tab (session keeps running on the computer)
+### Session list (home screen)
+- Shows all sessions for the selected device, grouped into **Active** and **Ended** sections
+- Each row shows a colored avatar, session name, last command, and time since last activity
+- **Swipe left** on a row to reveal a Kill button (tap once to confirm)
+- **Long-press** a row for a context sheet: rename or kill
+- Tap the device name at the top to switch between registered devices
+- Tap **+** to spawn a new session (command, name, optional tmux mode)
+- Tap ⚙ to open settings (account, sign out)
 
 ### Terminal view
-- Full interactive PTY: everything you can type in a local terminal works here
+- Full interactive PTY — tap the terminal to bring up the keyboard and type directly
 - Scrollback replayed on open so you see existing output immediately
+- Nav bar shows session name and a live **CPU / MEM** indicator (animates while active)
+- Back chevron returns to the session list; the session keeps running in the background
+- **tmux-backed sessions** gain additional controls (see below)
 
-### Bottom toolbar
-`Tab` · `Esc` · `Ctrl+C` · `Ctrl+D` · `Ctrl+Z` · `Ctrl+L` · `↑` · `↓` · `←` · `→` · `PgUp` · `PgDn`
+### tmux controls (tmux-backed sessions only)
+- **Window tab bar** shown below the toolbar — one chip per tmux window; tap to switch
+- **Swipe left / right** on the terminal to jump to the next / previous tmux window (toggle on/off with the swipe icon in the tab bar)
+- **Ctrl+B button** in the toolbar — tap to send the tmux prefix; long-press for a quick-action sheet:
+  - New window · Next window · Previous window · Rename window
+  - Split vertical · Split horizontal · Detach
+
+### Toolbar
+`Tab` · `Esc` · `Ctrl` · `Alt` · `Ctrl+C` · `↑` · `↓` · `←` · `→` · `PgUp` · `PgDn`
+
+`Ctrl` and `Alt` are sticky modifiers: tap once to arm, then tap any key to send the modified keystroke.
 
 ---
 
@@ -217,7 +240,8 @@ ccmux/
 │       ├── config/       # env var loading
 │       ├── ipc/          # Unix socket server/client (JSON protocol)
 │       ├── pty/          # PTY session pool and manager
-│       └── relay/        # WebSocket connection to backend
+│       ├── relay/        # WebSocket connection to backend
+│       └── tmux/         # tmux detection, pane discovery, topology broadcast
 ├── backend/
 │   ├── cmd/server/       # Backend entry point
 │   ├── internal/
@@ -235,8 +259,8 @@ ccmux/
 │       │   └── websocket/# WS client + reconnect manager
 │       └── features/
 │           ├── auth/     # Login / register screens
-│           ├── terminal/ # Session tabs, terminal view, toolbar
-│           └── workspace/# Drawer, device sections
+│           ├── terminal/ # Terminal view, toolbar, tmux controls
+│           └── workspace/# Session list, device switcher, settings, tmux hierarchy
 ├── scripts/
 │   ├── setup-local.sh    # Bootstrap dev stack end-to-end
 │   ├── run-agent.sh      # Start agent with saved credentials
@@ -265,3 +289,4 @@ Key packet types:
 | `resize` | mobile → agent | Terminal window resize |
 | `scrollback` | backend → mobile | Buffered output replay on connect |
 | `ping` / `pong` | both | Keepalive (45 s interval) |
+| `tmux_tree` | agent → mobile | Full tmux session/window/pane topology (sent on connect and every 10 s) |
