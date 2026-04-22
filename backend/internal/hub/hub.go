@@ -71,6 +71,19 @@ func (h *Hub) Subscribe(sessionID, deviceID string, conn *ClientConn) {
 	h.mu.Unlock()
 }
 
+// SubscribeDevice registers a client in the device-level subscription map without
+// associating it with any session.  This is called once at connect time so that
+// device-scoped broadcasts (TypeDeviceMetrics, TypeTmuxTree) are delivered even
+// before the user opens any terminal session.
+func (h *Hub) SubscribeDevice(deviceID string, conn *ClientConn) {
+	h.mu.Lock()
+	if h.deviceSubs[deviceID] == nil {
+		h.deviceSubs[deviceID] = make(map[*ClientConn]struct{})
+	}
+	h.deviceSubs[deviceID][conn] = struct{}{}
+	h.mu.Unlock()
+}
+
 // CleanupConn removes all device-level subscription records for a connection.
 // Call after unsubscribing all sessions when the client connection closes.
 func (h *Hub) CleanupConn(conn *ClientConn) {

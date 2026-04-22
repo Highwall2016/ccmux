@@ -97,6 +97,11 @@ func (a *App) handleAgentWS(w http.ResponseWriter, r *http.Request) {
 			// to any session on this device.
 			a.Hub.BroadcastToDevice(device.ID, data)
 
+		case protocol.TypeDeviceMetrics:
+			// Forward real-time CPU/memory stats to all subscribed mobile clients.
+			// No DB write — metrics are ephemeral, only useful while connected.
+			a.Hub.BroadcastToDevice(device.ID, data)
+
 		case protocol.TypeSessionStatus:
 			var sp protocol.SessionStatusPayload
 			if err := msgpack.Unmarshal(pkt.Payload, &sp); err != nil {
@@ -215,6 +220,15 @@ func (a *App) handleClientWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientConn := hub.NewClientConn(claims.UserID, conn, a.Hub)
+
+	// Pre-register this client in deviceSubs for every device it owns so that
+	// device-scoped broadcasts (TypeDeviceMetrics, TypeTmuxTree) are delivered
+	// even before the user subscribes to any individual terminal session.
+	if devices, err := a.DB.ListDevicesByUser(claims.UserID); err == nil {
+		for _, dev := range devices {
+			a.Hub.SubscribeDevice(dev.ID, clientConn)
+		}
+	}
 
 	// Track subscriptions for cleanup when the connection closes.
 	var subscribed []string

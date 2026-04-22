@@ -21,6 +21,7 @@ const (
 	TypeSubscribe      = uint8(0x30)
 	TypeUnsubscribe    = uint8(0x31)
 	TypeTmuxTree       = uint8(0x32) // agent → backend → clients: tmux pane hierarchy
+	TypeDeviceMetrics  = uint8(0x40) // agent → backend → clients: CPU + memory stats
 	TypePing           = uint8(0xFF)
 	TypePong           = uint8(0xFE)
 )
@@ -75,9 +76,17 @@ type SpawnSessionPayload struct {
 
 // TmuxTreePayload is used with TypeTmuxTree.
 // Sent by the agent whenever the tmux topology changes.
+// The optional CPU/memory pointer fields are also populated by the metrics
+// collector goroutine so that a single existing packet type carries both
+// topology and resource stats (works with backends that predate TypeDeviceMetrics).
 type TmuxTreePayload struct {
-	DeviceID string           `msgpack:"device_id"`
-	Sessions []TmuxSessionTree `msgpack:"sessions"`
+	DeviceID   string           `msgpack:"device_id"`
+	Sessions   []TmuxSessionTree `msgpack:"sessions"`
+	// Optional host resource metrics piggybacked on this packet (omitempty so
+	// older agents/backends that don't set these remain interoperable).
+	CPUPercent *float64 `msgpack:"cpu,omitempty"`
+	MemUsedMB  *uint64  `msgpack:"mem_used,omitempty"`
+	MemTotalMB *uint64  `msgpack:"mem_total,omitempty"`
 }
 
 // TmuxSessionTree is one tmux session with its windows.
@@ -99,6 +108,15 @@ type TmuxPaneTree struct {
 	CcmuxID  string `msgpack:"id"`    // ccmux session UUID for this pane
 	Title    string `msgpack:"title"`
 	Active   bool   `msgpack:"active"` // currently focused pane in the window
+}
+
+// DeviceMetricsPayload is used with TypeDeviceMetrics.
+// Sent by the agent every ~5 s; the backend forwards it to subscribed mobile clients.
+type DeviceMetricsPayload struct {
+	DeviceID   string  `msgpack:"device_id"`
+	CPUPercent float64 `msgpack:"cpu"`       // 0–100 (averaged across all cores)
+	MemUsedMB  uint64  `msgpack:"mem_used"`  // resident memory in MiB
+	MemTotalMB uint64  `msgpack:"mem_total"` // total physical RAM in MiB
 }
 
 // SubscribePayload is used with TypeSubscribe.

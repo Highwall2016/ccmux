@@ -106,3 +106,21 @@ class TmuxTree {
   final List<TmuxSessionNode> sessions;
   const TmuxTree({required this.deviceId, required this.sessions});
 }
+
+// ── Device Metrics ────────────────────────────────────────────────────────────
+
+/// Real-time CPU and memory snapshot streamed from the agent every ~5 s.
+class DeviceMetrics {
+  final double cpuPercent; // 0–100
+  final int memUsedMB;
+  final int memTotalMB;
+
+  const DeviceMetrics({
+    required this.cpuPercent,
+    required this.memUsedMB,
+    required this.memTotalMB,
+  });
+
+  double get memUsedRatio =>
+      memTotalMB > 0 ? memUsedMB / memTotalMB : 0.0;
+}

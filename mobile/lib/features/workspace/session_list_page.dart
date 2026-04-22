@@ -1,5 +1,3 @@
-import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -87,83 +85,57 @@ class _SessionAvatar extends StatelessWidget {
 
 // ── Resource Widget ──────────────────────────────────────────────────────────
 
-class _ResourceWidget extends StatefulWidget {
-  final bool active;
-  const _ResourceWidget({required this.active});
+/// Displays real-time CPU and memory chips from [workspaceProvider].
+/// Shows '--' placeholders until the first TypeDeviceMetrics packet arrives.
+class _ResourceWidget extends ConsumerWidget {
+  final String deviceId;
+  const _ResourceWidget({required this.deviceId});
 
-  @override
-  State<_ResourceWidget> createState() => _ResourceWidgetState();
-}
-
-class _ResourceWidgetState extends State<_ResourceWidget> {
-  final _rng = Random();
-  double _cpu = 20;
-  double _mem = 120;
-  late final int _memTotalMb; // simulated device total RAM
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    // Pick a realistic total RAM from common device sizes (8/16/32 GB).
-    const totals = [8192, 16384, 32768];
-    _memTotalMb = totals[_rng.nextInt(totals.length)];
-    _mem = (_memTotalMb * 0.15).clamp(256, 4096).toDouble();
-    if (widget.active) _startTimer();
-  }
-
-  @override
-  void didUpdateWidget(_ResourceWidget old) {
-    super.didUpdateWidget(old);
-    if (widget.active && _timer == null) _startTimer();
-    if (!widget.active) {
-      _timer?.cancel();
-      _timer = null;
-    }
-  }
-
-  void _startTimer() {
-    _timer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
-      if (!mounted) return;
-      setState(() {
-        _cpu = (_cpu + (_rng.nextDouble() - 0.5) * 14).clamp(1, 99);
-        _mem = (_mem + (_rng.nextDouble() - 0.5) * 80)
-            .clamp(256, _memTotalMb * 0.85);
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  String _fmtMem(double mb) {
+  static String _fmtMem(int mb) {
     if (mb >= 1024) return '${(mb / 1024).toStringAsFixed(1)}G';
-    return '${mb.round()}M';
+    return '${mb}M';
   }
 
   @override
-  Widget build(BuildContext context) {
-    final cpuColor = _cpu > 80
-        ? CcmuxColors.red
-        : _cpu > 50
-            ? CcmuxColors.yellow
-            : CcmuxColors.accent;
-    final memColor = (_mem / _memTotalMb) > 0.8
-        ? CcmuxColors.red
-        : (_mem / _memTotalMb) > 0.6
-            ? CcmuxColors.yellow
-            : CcmuxColors.blue;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ws = ref.watch(workspaceProvider).valueOrNull;
+    final metrics = ws?.metricsByDevice[deviceId];
+
+    final String cpuLabel;
+    final Color cpuColor;
+    if (metrics == null) {
+      cpuLabel = '--';
+      cpuColor = CcmuxColors.textFaint;
+    } else {
+      cpuLabel = '${metrics.cpuPercent.round()}%';
+      cpuColor = metrics.cpuPercent > 80
+          ? CcmuxColors.red
+          : metrics.cpuPercent > 50
+              ? CcmuxColors.yellow
+              : CcmuxColors.accent;
+    }
+
+    final String memLabel;
+    final Color memColor;
+    if (metrics == null) {
+      memLabel = '--';
+      memColor = CcmuxColors.textFaint;
+    } else {
+      memLabel =
+          '${_fmtMem(metrics.memUsedMB)}/${_fmtMem(metrics.memTotalMB)}';
+      memColor = metrics.memUsedRatio > 0.8
+          ? CcmuxColors.red
+          : metrics.memUsedRatio > 0.6
+              ? CcmuxColors.yellow
+              : CcmuxColors.blue;
+    }
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _chip('CPU', '${_cpu.round()}%', cpuColor),
+        _chip('CPU', cpuLabel, cpuColor),
         const SizedBox(width: 4),
-        _chip('MEM', '${_fmtMem(_mem)}/${_fmtMem(_memTotalMb.toDouble())}',
-            memColor),
+        _chip('MEM', memLabel, memColor),
       ],
     );
   }
@@ -1452,7 +1424,7 @@ class _Header extends ConsumerWidget {
                   ),
                   if (device.online) ...[
                     const SizedBox(height: 5),
-                    _ResourceWidget(active: true),
+                    _ResourceWidget(deviceId: device.id),
                   ],
                 ],
               ),

@@ -12,9 +12,12 @@ class WorkspaceState {
   final bool loading;
   final String? error;
 
-  /// Latest tmux topology keyed by device ID.  Null when no TypeTmuxTree has
-  /// been received yet or tmux is not running on that device.
+  /// Latest tmux topology keyed by device ID.
   final Map<String, TmuxTree> tmuxTreeByDevice;
+
+  /// Latest real-time CPU/memory metrics keyed by device ID.
+  /// Null for a device until the first TypeDeviceMetrics packet arrives.
+  final Map<String, DeviceMetrics> metricsByDevice;
 
   const WorkspaceState({
     this.devices = const [],
@@ -22,6 +25,7 @@ class WorkspaceState {
     this.loading = false,
     this.error,
     this.tmuxTreeByDevice = const {},
+    this.metricsByDevice = const {},
   });
 
   WorkspaceState copyWith({
@@ -30,6 +34,7 @@ class WorkspaceState {
     bool? loading,
     String? error,
     Map<String, TmuxTree>? tmuxTreeByDevice,
+    Map<String, DeviceMetrics>? metricsByDevice,
   }) =>
       WorkspaceState(
         devices: devices ?? this.devices,
@@ -37,6 +42,7 @@ class WorkspaceState {
         loading: loading ?? this.loading,
         error: error,
         tmuxTreeByDevice: tmuxTreeByDevice ?? this.tmuxTreeByDevice,
+        metricsByDevice: metricsByDevice ?? this.metricsByDevice,
       );
 }
 
@@ -49,6 +55,9 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
         .where((p) => p.type == typeSessionStatus)
         .listen(_onSessionStatus);
     ws.packets.where((p) => p.type == typeTmuxTree).listen(_onTmuxTree);
+    ws.packets
+        .where((p) => p.type == typeDeviceMetrics)
+        .listen(_onDeviceMetrics);
     return _fetchAll();
   }
 
@@ -59,6 +68,30 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
     await Future.wait(devices.map((d) async {
       sessMap[d.id] = await api.listSessions(d.id);
     }));
+
+    // Force device subscriptions for old backend versions.
+    // The old backend only adds us to deviceSubs if we subscribe to a session.
+    // By subscribing and immediately unsubscribing, we remain in deviceSubs
+    // (since it's only cleared on disconnect) and receive TypeTmuxTree / TypeDeviceMetrics.
+    Future<void> forceSubscribe() async {
+      final ws = ref.read(wsClientProvider);
+      for (int i = 0; i < 5; i++) {
+        if (ws.state == WsState.connected) {
+          for (final entry in sessMap.entries) {
+            final activeSessions = entry.value.where((s) => s.status == 'active').toList();
+            if (activeSessions.isNotEmpty) {
+              final sid = activeSessions.first.id;
+              ws.subscribe(sid);
+              ws.unsubscribe(sid);
+            }
+          }
+          break;
+        }
+        await Future.delayed(const Duration(seconds: 1));
+      }
+    }
+    forceSubscribe();
+
     return WorkspaceState(devices: devices, sessionsByDevice: sessMap);
   }
 
@@ -275,6 +308,9 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
   }
 
   /// Handles a TypeTmuxTree packet, updating the tmux topology for its device.
+  /// Also reads optional cpu/mem_used/mem_total fields added by the metrics
+  /// collector goroutine — a backwards-compatible piggyback that works with
+  /// older backend deployments which already forward TypeTmuxTree unchanged.
   void _onTmuxTree(Packet pkt) {
     final payload = pkt.payload;
     if (payload == null) return;
@@ -283,6 +319,9 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
       final mapLen = u.unpackMapLength();
       String deviceId = '';
       final sessionNodes = <TmuxSessionNode>[];
+      double? cpu;
+      int? memUsed;
+      int? memTotal;
 
       for (int i = 0; i < mapLen; i++) {
         final k = u.unpackString()!;
@@ -354,23 +393,94 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
             }
             sessionNodes.add(TmuxSessionNode(name: sessName, windows: windows));
           }
+        } else if (k == 'cpu') {
+          cpu = u.unpackDouble()?.toDouble();
+        } else if (k == 'mem_used') {
+          memUsed = u.unpackInt();
+        } else if (k == 'mem_total') {
+          memTotal = u.unpackInt();
         } else {
           u.unpackString();
         }
       }
 
       if (deviceId.isEmpty) return;
-      final tree = TmuxTree(deviceId: deviceId, sessions: sessionNodes);
       final current = state.valueOrNull;
       if (current == null) return;
+
+      // Update tmux topology only when there are sessions in this packet
+      // (metrics-only heartbeats have an empty sessions list).
+      final newTmux = sessionNodes.isNotEmpty
+          ? {
+              ...current.tmuxTreeByDevice,
+              deviceId: TmuxTree(deviceId: deviceId, sessions: sessionNodes),
+            }
+          : current.tmuxTreeByDevice;
+
+      // Update metrics whenever the fields are present.
+      final newMetrics = (cpu != null && memUsed != null && memTotal != null)
+          ? {
+              ...current.metricsByDevice,
+              deviceId: DeviceMetrics(
+                cpuPercent: cpu,
+                memUsedMB: memUsed,
+                memTotalMB: memTotal,
+              ),
+            }
+          : current.metricsByDevice;
+
       state = AsyncValue.data(current.copyWith(
-        tmuxTreeByDevice: {
-          ...current.tmuxTreeByDevice,
-          deviceId: tree,
-        },
+        tmuxTreeByDevice: newTmux,
+        metricsByDevice: newMetrics,
       ));
     } catch (_) {
       // Malformed TmuxTree packet — ignore.
+    }
+  }
+  /// Handles a TypeDeviceMetrics packet, updating live CPU/memory for its device.
+  void _onDeviceMetrics(Packet pkt) {
+    final payload = pkt.payload;
+    if (payload == null) return;
+    try {
+      final u = Unpacker.fromList(payload);
+      final mapLen = u.unpackMapLength();
+      String deviceId = '';
+      double cpu = 0;
+      int memUsed = 0;
+      int memTotal = 0;
+
+      for (int i = 0; i < mapLen; i++) {
+        final k = u.unpackString()!;
+        switch (k) {
+          case 'device_id':
+            deviceId = u.unpackString() ?? '';
+          case 'cpu':
+            cpu = (u.unpackDouble() ?? 0).toDouble();
+          case 'mem_used':
+            memUsed = u.unpackInt() ?? 0;
+          case 'mem_total':
+            memTotal = u.unpackInt() ?? 0;
+          default:
+            u.unpackString();
+        }
+      }
+
+      if (deviceId.isEmpty) return;
+      final current = state.valueOrNull;
+      if (current == null) return;
+
+      state = AsyncValue.data(current.copyWith(
+        metricsByDevice: {
+          ...current.metricsByDevice,
+          deviceId: DeviceMetrics(
+            cpuPercent: cpu,
+            memUsedMB: memUsed,
+            memTotalMB: memTotal,
+          ),
+        },
+      ));
+    } catch (_) {
+      // Malformed metrics packet — ignore.
     }
   }
 }

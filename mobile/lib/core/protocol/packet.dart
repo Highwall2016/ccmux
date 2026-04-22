@@ -16,6 +16,7 @@ const int typeAuthFail = 0x22;
 const int typeSubscribe = 0x30;
 const int typeUnsubscribe = 0x31;
 const int typeTmuxTree = 0x32; // agent → backend → clients: tmux pane hierarchy
+const int typeDeviceMetrics = 0x40; // agent → backend → clients: CPU + memory stats
 const int typePing = 0xFF;
 const int typePong = 0xFE;
 

@@ -355,11 +355,19 @@ func (m *Manager) HasSession(id string) bool {
 	return ok
 }
 
-// SpawnTmux creates a ccmux session that wraps a running tmux pane by
-// spawning "tmux attach-session -t <tmuxTarget>" as the PTY command.
+// SpawnTmux creates a ccmux session that wraps a running tmux session by
+// spawning "tmux new-session -t <session-name>" as the PTY command.  Using
+// new-session with -t creates a "grouped" session that shares the same windows
+// as the target; this works correctly when launched from a non-interactive PTY,
+// unlike attach-session which exits immediately in that context.
+//
+// tmuxTarget is the full pane target string (e.g. "ccmux-0:0.0"); only the
+// session-name part (before ":") is used for the new-session call.
 // The session's tmux target is stored so TmuxTargetOf can return it later.
 func (m *Manager) SpawnTmux(id, name, tmuxTarget string, cols, rows uint16) error {
-	command := fmt.Sprintf("tmux attach-session -t '%s'", tmuxTarget)
+	// Use the full target (session:window.pane) so the grouped session
+	// attaches to the specific pane, not just the session's active pane.
+	command := fmt.Sprintf("tmux new-session -t '%s'", tmuxTarget)
 	if err := m.Spawn(id, name, command, cols, rows); err != nil {
 		return err
 	}

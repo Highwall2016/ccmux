@@ -15,6 +15,7 @@ import (
 
 	"github.com/ccmux/agent/internal/config"
 	"github.com/ccmux/agent/internal/ipc"
+	"github.com/ccmux/agent/internal/metrics"
 	agentpty "github.com/ccmux/agent/internal/pty"
 	"github.com/ccmux/agent/internal/relay"
 	agenttmux "github.com/ccmux/agent/internal/tmux"
@@ -298,6 +299,36 @@ func main() {
 			announceTmuxSession(wsConn, sessionID, name, "", tmuxTarget)
 		},
 	)
+
+	// Metrics collector: samples CPU + memory every 5 s and piggybacks the
+	// values onto a TypeTmuxTree packet (with an empty sessions list).
+	// TypeTmuxTree is forwarded by ALL backend versions via BroadcastToDevice,
+	// so this works even with the deployed backend that predates TypeDeviceMetrics.
+	go metrics.Run(ctx, 0, func(s metrics.Snapshot) {
+		cpu := s.CPUPercent
+		used := s.MemUsedMB
+		total := s.MemTotalMB
+		tree := protocol.TmuxTreePayload{
+			DeviceID:   cfg.DeviceID,
+			Sessions:   []protocol.TmuxSessionTree{}, // empty — metrics-only heartbeat
+			CPUPercent: &cpu,
+			MemUsedMB:  &used,
+			MemTotalMB: &total,
+		}
+		payload, err := msgpack.Marshal(&tree)
+		if err != nil {
+			return
+		}
+		pkt, err := (&protocol.Packet{
+			Type:    protocol.TypeTmuxTree,
+			Payload: payload,
+		}).Encode()
+		if err != nil {
+			return
+		}
+		log.Printf("[metrics] cpu=%.1f%% mem=%dMB/%dMB → sending via TmuxTree heartbeat", cpu, used, total)
+		wsConn.Send(pkt)
+	})
 
 	log.Printf("[agent] starting — device=%s server=%s ipc=%s", cfg.DeviceID, cfg.ServerURL, cfg.IPCSocket)
 

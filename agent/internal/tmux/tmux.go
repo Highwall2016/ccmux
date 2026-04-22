@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const fieldSep = "\x01" // unlikely to appear in session/window/pane names
+const fieldSep = "\x1f" // field separator for tmux -F format; must not appear in names
 
 // PaneInfo describes a single tmux pane.
 type PaneInfo struct {

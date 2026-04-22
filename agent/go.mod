@@ -11,6 +11,7 @@ require (
 )
 
 require (
+	github.com/shirou/gopsutil/v3 v3.24.5 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
 )

@@ -4,7 +4,8 @@ import '../storage/secure_storage.dart' as storage;
 import 'api_models.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) {
-  return ApiClient(baseUrl: const String.fromEnvironment(
+  return ApiClient(
+      baseUrl: const String.fromEnvironment(
     'CCMUX_API_URL',
     defaultValue: 'http://localhost:8080',
   ));
@@ -51,7 +52,14 @@ class ApiClient {
 
   Future<List<DeviceModel>> listDevices() async {
     final r = await _dio.get<List<dynamic>>('/api/devices');
-    return r.data!.map((e) => DeviceModel.fromJson(e as Map<String, dynamic>)).toList();
+    final devices = r.data!
+        .map((e) => DeviceModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+    // Return online devices first, offline devices last.
+    return [
+      ...devices.where((d) => d.online),
+      ...devices.where((d) => !d.online),
+    ];
   }
 
   Future<void> deleteDevice(String deviceId) async {
@@ -62,10 +70,13 @@ class ApiClient {
 
   Future<List<SessionModel>> listSessions(String deviceId) async {
     final r = await _dio.get<List<dynamic>>('/api/devices/$deviceId/sessions');
-    return r.data!.map((e) => SessionModel.fromJson(e as Map<String, dynamic>)).toList();
+    return r.data!
+        .map((e) => SessionModel.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
-  Future<void> renameSession(String deviceId, String sessionId, String name) async {
+  Future<void> renameSession(
+      String deviceId, String sessionId, String name) async {
     await _dio.patch<void>('/api/devices/$deviceId/sessions/$sessionId',
         data: {'name': name});
   }
@@ -101,8 +112,11 @@ class ApiClient {
     required String platform,
     required String deviceName,
   }) async {
-    await _dio.post('/api/push/register',
-        data: {'token': token, 'platform': platform, 'device_name': deviceName});
+    await _dio.post('/api/push/register', data: {
+      'token': token,
+      'platform': platform,
+      'device_name': deviceName
+    });
   }
 
   Future<void> deletePushToken(String token) async {
@@ -128,7 +142,8 @@ class _JwtInterceptor extends Interceptor {
   _JwtInterceptor(this._dio, this._baseUrl);
 
   @override
-  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+  void onRequest(
+      RequestOptions options, RequestInterceptorHandler handler) async {
     final tokens = await storage.loadTokens();
     if (tokens.accessToken != null) {
       options.headers['Authorization'] = 'Bearer ${tokens.accessToken}';
@@ -152,9 +167,9 @@ class _JwtInterceptor extends Interceptor {
           data: {'refresh_token': tokens.refreshToken});
       final newAccess = r.data!['access_token'] as String;
       await storage.saveTokens(
-        accessToken:  newAccess,
+        accessToken: newAccess,
         refreshToken: tokens.refreshToken!,
-        userID:       tokens.userID ?? '',
+        userID: tokens.userID ?? '',
       );
       // Retry original request with new token.
       final opts = err.requestOptions;

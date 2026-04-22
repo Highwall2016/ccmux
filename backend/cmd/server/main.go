@@ -4,8 +4,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/ccmux/backend/internal/api"
+	"github.com/ccmux/backend/internal/api/middleware"
 	"github.com/ccmux/backend/internal/hub"
 	"github.com/ccmux/backend/internal/notify"
 	"github.com/ccmux/backend/internal/store"
@@ -34,6 +36,17 @@ func runMigrate() {
 }
 
 func runServer() {
+	// Configure which upstream proxy IPs are allowed to set X-Forwarded-For.
+	// Defaults cover loopback and all RFC-1918 ranges (Docker bridge networks).
+	// Override with: TRUSTED_PROXIES="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+	trustedCIDRs := strings.Split(
+		envOr("TRUSTED_PROXIES", "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128"),
+		",",
+	)
+	if err := middleware.SetTrustedProxies(trustedCIDRs); err != nil {
+		log.Fatalf("trusted_proxies: %v", err)
+	}
+
 	db, err := store.Open(mustEnv("DATABASE_URL"))
 	if err != nil {
 		log.Fatalf("db: %v", err)
