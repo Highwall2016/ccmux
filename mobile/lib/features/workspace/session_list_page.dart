@@ -665,18 +665,6 @@ class _SettingsSheet extends ConsumerWidget {
             sub: 'Unlimited devices & sessions',
             highlight: CcmuxColors.yellow,
           ),
-          const SizedBox(height: 6),
-          _settingRow(
-            icon: Icons.info_outline,
-            label: 'About ccmux',
-            sub: 'Version & release notes',
-          ),
-          const SizedBox(height: 6),
-          _settingRow(
-            icon: Icons.help_outline,
-            label: 'Help & Docs',
-            sub: 'github.com/ccmux',
-          ),
           const SizedBox(height: 8),
           GestureDetector(
             onTap: () {
@@ -1353,15 +1341,15 @@ class _Header extends ConsumerWidget {
               builder: (_) => const _SettingsSheet(),
             ),
             child: Container(
-              width: 36,
-              height: 36,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.white.withOpacity(0.08)),
               ),
               child: const Icon(Icons.settings_outlined,
-                  color: Color(0xFF777777), size: 17),
+                  color: Color(0xFF999999), size: 22),
             ),
           ),
 

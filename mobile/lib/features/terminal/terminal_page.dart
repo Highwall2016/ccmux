@@ -90,7 +90,7 @@ class TerminalPage extends ConsumerWidget {
             alignment: Alignment.centerLeft,
             child: GestureDetector(
               onTap: () => context.go('/sessions'),
-              child: const Icon(Icons.chevron_left, color: CcmuxColors.accent, size: 22),
+              child: const Icon(Icons.chevron_left, color: CcmuxColors.accent, size: 32),
             ),
           ),
         ],

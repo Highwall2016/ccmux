@@ -228,11 +228,21 @@ class WorkspaceNotifier extends AsyncNotifier<WorkspaceState> {
   }
 
   Future<void> refresh() async {
-    state = const AsyncValue.loading();
+    // Do NOT set state to loading — that would set state.valueOrNull to null
+    // and cause _onTmuxTree / _onDeviceMetrics to drop in-flight heartbeats,
+    // which results in the metrics display permanently showing '--'.
+    // Instead, fetch silently and merge the fresh device/session data while
+    // preserving any live metrics and tmux topology already in state.
     try {
-      state = AsyncValue.data(await _fetchAll());
-    } catch (e) {
-      state = AsyncValue.error(e, StackTrace.current);
+      final fresh = await _fetchAll();
+      final current = state.valueOrNull;
+      state = AsyncValue.data(fresh.copyWith(
+        metricsByDevice: current?.metricsByDevice ?? const {},
+        tmuxTreeByDevice: current?.tmuxTreeByDevice ?? const {},
+      ));
+    } catch (_) {
+      // Silently swallow network errors during background refresh so an
+      // intermittent failure does not destroy the existing UI state.
     }
   }
 

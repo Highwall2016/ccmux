@@ -1,7 +1,7 @@
 name: ccmux
 description: Control terminal sessions on your desktop from your phone.
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.2+1
 
 environment:
   sdk: '>=3.4.0 <4.0.0'
@@ -52,6 +52,14 @@ dev_dependencies:
   riverpod_generator: ^2.4.0
   build_runner: ^2.4.11
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  image_path: "assets/app_icon.png"
+  image_path_ios: "assets/app_icon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true

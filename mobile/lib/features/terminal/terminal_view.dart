@@ -17,6 +17,7 @@ class TerminalView extends ConsumerStatefulWidget {
 class _TerminalViewState extends ConsumerState<TerminalView> {
   late final xterm.TerminalController _controller;
   double _fontSize = 14.0;
+  double _baseFontSize = 14.0;
 
   @override
   void initState() {
@@ -45,21 +46,22 @@ class _TerminalViewState extends ConsumerState<TerminalView> {
     final tmuxBacked   = sess.tmuxBacked;
 
     return GestureDetector(
+      onScaleStart: (_) {
+        _baseFontSize = _fontSize;
+      },
       onScaleUpdate: (details) {
         if (details.scale == 1.0) return;
         setState(() {
-          _fontSize = (_fontSize * details.scale).clamp(8.0, 32.0);
+          _fontSize = (_baseFontSize * details.scale).clamp(8.0, 32.0);
         });
       },
       onHorizontalDragEnd: (swipeEnabled && tmuxBacked)
           ? (details) {
               final vx = details.primaryVelocity ?? 0;
-              if (vx.abs() < 300) return; // ignore slow drags
+              if (vx.abs() < 300) return;
               if (vx < 0) {
-                // Swipe left → next window (Ctrl+B n)
                 _sendBytes([0x02, 0x6E]);
               } else {
-                // Swipe right → previous window (Ctrl+B p)
                 _sendBytes([0x02, 0x70]);
               }
             }
